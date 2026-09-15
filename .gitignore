@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.vite
+.output
+*.local
+
+# 解析产物：由 scripts/build-data.mjs 生成，不入库
+src/data/generated.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 隐私目录（真实简历 / 成果卡 / 面试记录 / 复盘）在本地私有副本维护，不进公开仓
+# content/简历  content/项目成果  content/面试记录  content/项目复盘

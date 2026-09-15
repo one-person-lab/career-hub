@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- neo-brutalism 品牌标：黄底黑边 + 旗帜（抢占目标阵地） -->
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#ffe89b" stroke="#000" stroke-width="5"/>
+  <path d="M23 14 v38" stroke="#000" stroke-width="6" stroke-linecap="round"/>
+  <path d="M27 16 h22 l-7 9 7 9 h-22 z" fill="#000"/>
+</svg>
