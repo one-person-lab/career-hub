@@ -23,6 +23,7 @@ const CONTENT = join(ROOT, 'content')
 const PRIVATE = join(ROOT, 'content.private')
 const LEGACY = join(ROOT, '..', 'career-os')
 const OUT = join(ROOT, 'src/data/generated.json')
+const OUT_DEMO = join(ROOT, 'src/data/generated.demo.json')
 
 const EXCLUDE_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.kiro', 'dist', '.vite'])
 
@@ -320,8 +321,48 @@ function parseEvidenceCard(file, dir) {
     diagrams: extractDiagrams(md),
     chunks,
     hasStar: /STAR|行为面/.test(md),
+    // 面试演示发布开关：`演示: 是` 才进演示包；`演示隐藏: 复盘, 时间线` 按 H2 段名删段
+    demo: fm['演示'] === '是',
+    demoHidden: splitList(fm['演示隐藏']),
+    demoLink: (fm['演示链接'] || '').trim(),
     dir,
     chars: md.length,
+  }
+}
+
+/**
+ * 演示投影：把一张成果卡削成「讲给面试官听」的形状。
+ * 只留讲解需要的字段（file / chars / hasStar 这类内部字段一概不出门），
+ * 按 demoHidden 整段删除，段里的 mermaid 图随之消失 —— 图是从留下的块里重抽的，
+ * 不复用 extractDiagrams(md) 的全量结果。
+ */
+function toDemoCard(c) {
+  const hidden = new Set(c.demoHidden)
+  const kept = c.chunks.filter((ch) => !hidden.has(ch.name))
+  // 「影响」与「架构图」单独前置渲染，留在 chunks 里会重复出现
+  const ON_CARD = new Set(['影响', '架构图'])
+  const hasImpact = kept.some((ch) => ch.name === '影响')
+  const diagrams = []
+  for (const ch of kept) {
+    for (const b of ch.blocks) {
+      if (b.type === 'mermaid') {
+        diagrams.push({ id: `d${diagrams.length + 1}`, name: ch.name, code: b.text })
+      }
+    }
+  }
+  return {
+    id: c.id,
+    title: c.title,
+    oneLine: c.oneLine,
+    type: c.type,
+    period: c.period,
+    role: c.role,
+    scale: c.scale,
+    demoLink: c.demoLink,
+    impact: hasImpact ? c.impact : [],
+    impactHead: hasImpact ? c.impactHead : [],
+    diagrams,
+    chunks: kept.filter((ch) => !ON_CARD.has(ch.name)).map(({ name, blocks }) => ({ name, blocks })),
   }
 }
 
@@ -603,12 +644,16 @@ const data = {
 mkdirSync(join(ROOT, 'src/data'), { recursive: true })
 writeFileSync(OUT, JSON.stringify(data, null, 1))
 
+// 演示投影：只含显式标记「演示: 是」的卡。演示产物读这份，不读 generated.json。
+const demoCards = evidence.filter((c) => c.demo).map(toDemoCard)
+writeFileSync(OUT_DEMO, JSON.stringify({ generatedAt: data.generatedAt, cards: demoCards }, null, 1))
+
 const secs = sections.filter((s) => !s.builtin)
 console.log(
   `[gen:data] 板块 ${sections.length}（内置 ${sections.length - secs.length} · 内容板块 ${secs.length}）` +
-    ` · 成果卡 ${evidence.length}（${evidence.reduce((s, c) => s + c.diagrams.length, 0)} 张图）` +
+    ` · 成果卡 ${evidence.length}（演示 ${demoCards.length} 张 · ${evidence.reduce((s, c) => s + c.diagrams.length, 0)} 张图）` +
     ` · 知识卡 ${knowledge.length}（${knowledge.reduce((s, c) => s + c.diagrams.length, 0)} 张图）` +
     ` · 管道 ${data.pipeline.length} 条` +
     ` · 旧库 ${data.legacy ? data.legacy.mdTotal + ' 篇 md / ' + data.legacy.htmlTotal + ' 个 html' : '未找到'}` +
-    ` → src/data/generated.json`,
+    ` → src/data/generated.json + generated.demo.json`,
 )

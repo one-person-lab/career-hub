@@ -21,6 +21,7 @@ dist-ssr
 
 # 解析产物：由 scripts/build-data.mjs 生成，不入库
 src/data/generated.json
+src/data/generated.demo.json
 
 # Editor directories and files
 .vscode/*
