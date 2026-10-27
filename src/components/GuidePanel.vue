@@ -28,33 +28,26 @@ const label = (d: SectionDoc): string => (d.name.includes('模板') ? '模板' :
 </script>
 
 <template>
-  <div v-if="docs.length" class="neo-card">
-    <button class="flex w-full items-center gap-2 text-left" @click="open = !open">
-      <PhBookOpen :size="17" weight="bold" class="shrink-0" />
-      <span class="min-w-0 flex-1 text-lg font-black">这个板块怎么用</span>
-      <PhCaretDown :size="15" weight="bold" class="shrink-0 transition-transform" :class="open ? 'rotate-180' : ''" />
-    </button>
-
-    <div v-if="!open" class="mt-2">
-      <p
+  <div v-if="docs.length" class="panel !p-0">
+    <button class="row h-auto border-b border-line hover:bg-transparent" @click="open = !open">
+      <PhBookOpen :size="14" weight="bold" class="shrink-0 text-ink-3" />
+      <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">这个板块怎么用</span>
+      <span
         v-for="(l, i) in current?.intro || []"
         :key="i"
-        class="text-sm font-bold leading-relaxed text-neutral-600"
+        class="hidden min-w-0 truncate text-[11px] text-ink-3 lg:block lg:max-w-[420px]"
         v-html="inline(l)"
       />
-    </div>
+      <PhCaretDown :size="13" weight="bold" class="shrink-0 text-ink-3 transition-transform" :class="open ? 'rotate-180' : ''" />
+    </button>
 
-    <div v-if="open" class="mt-3 flex flex-col gap-3 border-t-2 border-dashed border-neutral-300 pt-3">
-      <div v-if="docs.length > 1" class="flex flex-wrap gap-2">
+    <div v-if="open" class="flex flex-col gap-3 p-3.5">
+      <div v-if="docs.length > 1" class="flex flex-wrap gap-1.5">
         <button
           v-for="d in docs"
           :key="d.name"
-          class="neo-chip border-2 transition-colors"
-          :class="
-            d.name === current?.name
-              ? 'border-black bg-white font-black shadow-neo-sm'
-              : 'border-transparent hover:bg-neo-yellow/60'
-          "
+          class="chip transition-colors hover:bg-hover hover:text-ink"
+          :class="d.name === current?.name ? 'chip-solid text-ink' : ''"
           @click="active = d.name"
         >
           {{ label(d) }}
@@ -62,10 +55,10 @@ const label = (d: SectionDoc): string => (d.name.includes('模板') ? '模板' :
       </div>
 
       <template v-if="current">
-        <p class="text-[11px] text-neutral-400">{{ current.path }}</p>
+        <p class="font-mono text-[10px] text-ink-3">{{ current.path }}</p>
         <section v-for="(c, ci) in current.chunks" :key="ci">
-          <h4 class="text-sm font-black">{{ c.name }}</h4>
-          <div class="mt-1.5">
+          <h4 class="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">{{ c.name }}</h4>
+          <div>
             <Blocks :blocks="c.blocks" :mid-prefix="`guide-${sectionId}-${ci}`" compact />
           </div>
         </section>

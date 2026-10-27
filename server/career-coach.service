@@ -1,0 +1,18 @@
+[Unit]
+Description=career-hub 面试教练代理（只监听 127.0.0.1，由 nginx 反代）
+After=network.target
+
+[Service]
+Type=simple
+User=www
+WorkingDirectory=/opt/career-hub
+# 密钥由 systemd 以 root 读进来，www 进程自己不需要碰这个文件
+EnvironmentFile=-/opt/career-hub/.env
+Environment=COACH_PORT=8790
+ExecStart=/usr/local/bin/node /opt/career-hub/coach-proxy.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

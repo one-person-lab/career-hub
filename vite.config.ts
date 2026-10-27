@@ -1,9 +1,10 @@
 import vue from '@vitejs/plugin-vue'
-import { defineConfig, type Plugin, type Connect } from 'vite'
+import { defineConfig, loadEnv, type Plugin, type Connect } from 'vite'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { fileURLToPath } from 'node:url'
+import { handleCoach } from './server/coach-proxy.mjs'
 
 /**
  * 只读映射：把 /portfolio/* 指向 ../career-os/04-作品集/personal-website/
@@ -54,8 +55,26 @@ function portfolioStatic(): Plugin {
   }
 }
 
+/**
+ * AI 面试教练代理：真实实现放在 server/coach-proxy.mjs，
+ * 线上 systemd 跑同一个文件，本地 dev 挂进 middleware —— 只有一份密钥处理逻辑。
+ */
+function coachApi(): Plugin {
+  return {
+    name: 'career-coach-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/coach', handleCoach as unknown as Connect.NextHandleFunction)
+    },
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue(), portfolioStatic()],
-  server: { port: 5175 },
+export default defineConfig(({ mode }) => {
+  // .env 里的 COACH_* 不会自动进 process.env，这里手动搬一次
+  Object.assign(process.env, loadEnv(mode, path.dirname(fileURLToPath(import.meta.url)), ''))
+
+  return {
+    plugins: [vue(), portfolioStatic(), coachApi()],
+    server: { port: 5175 },
+  }
 })

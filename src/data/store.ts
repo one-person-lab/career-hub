@@ -13,6 +13,8 @@ import {
   PhFileText,
   PhWrench,
   PhFiles,
+  PhKanban,
+  PhMicrophone,
 } from '@phosphor-icons/vue'
 
 /* ==================== 通用块 ==================== */
@@ -85,6 +87,30 @@ export interface KnowledgeCard {
   chars: number
 }
 
+/* ==================== 岗位管道 ==================== */
+
+export interface PipelineRow {
+  key: string
+  company: string
+  role: string
+  stage: string
+  stageKnown: boolean
+  applied: string | null
+  /** 表格里原样写的日期，可能只到月份（2026-07）——解析不出 ISO 时用它兜底显示 */
+  appliedRaw: string
+  appliedAge: number | null
+  nextAt: string | null
+  /** 距今天还有几天；负数=已过但没记录结果 */
+  nextIn: number | null
+  nextRound: string
+  action: string
+  readiness: string
+  readinessScore: number
+  evidenceIds: string[]
+  knowledgeIds: string[]
+  row: number
+}
+
 /* ==================== 通用板块 ==================== */
 
 export interface SectionDoc {
@@ -131,6 +157,7 @@ const r = raw as Record<string, unknown>
 export const sections: Section[] = r.sections as Section[]
 export const evidence: EvidenceCard[] = r.evidence as EvidenceCard[]
 export const knowledge: KnowledgeCard[] = r.knowledge as KnowledgeCard[]
+export const pipeline: PipelineRow[] = (r.pipeline as PipelineRow[]) ?? []
 export const legacy: LegacyStat | null = (r.legacy as LegacyStat) ?? null
 export const generatedAt: string = r.generatedAt as string
 
@@ -196,6 +223,80 @@ export const emptyCardDirs = (): { dir: string; count: number }[] =>
     { dir: '知识点', count: knowledge.length },
   ].filter((x) => x.count === 0)
 
+/* ==================== 管道派生 ==================== */
+
+/** 看板列顺序；终态列排在最后 */
+export const PIPELINE_STAGES = [
+  '待投',
+  '已投',
+  '笔试测评',
+  '一面',
+  '二面',
+  '三面',
+  'HR面',
+  'Offer',
+  '暂停',
+  '已结束',
+]
+
+/** 还在推进的岗位 —— 终态的不参与「下一步做什么」 */
+const LIVE = new Set(['待投', '已投', '笔试测评', '一面', '二面', '三面', 'HR面', 'Offer'])
+export const isLive = (row: PipelineRow): boolean => LIVE.has(row.stage)
+
+export const stageTone = (stage: string): string =>
+  ({
+    待投: 'b-gray',
+    已投: 'b-gray',
+    笔试测评: 'b-blue',
+    一面: 'b-blue',
+    二面: 'b-blue',
+    三面: 'b-blue',
+    HR面: 'b-purple',
+    Offer: 'b-green',
+    暂停: 'b-amber',
+    已结束: 'b-red',
+  })[stage] || 'b-gray'
+
+export const readinessTone = (score: number): string =>
+  score >= 3 ? 'text-green' : score === 2 ? 'text-amber' : score === 1 ? 'text-red' : 'text-ink-3'
+
+/** 按阶段分组，只保留有行的列 */
+export const pipelineByStage = (): { stage: string; rows: PipelineRow[] }[] =>
+  PIPELINE_STAGES.map((stage) => ({ stage, rows: pipeline.filter((p) => p.stage === stage) })).filter(
+    (g) => g.rows.length > 0,
+  )
+
+/** 近期面试：已安排下一轮、且还没过期的，按时间升序 */
+export const upcomingInterviews = (limit = 5): PipelineRow[] =>
+  pipeline
+    .filter((p) => p.nextIn !== null && p.nextIn >= 0)
+    .sort((a, b) => (a.nextIn ?? 0) - (b.nextIn ?? 0))
+    .slice(0, limit)
+
+/** 逾期未记录：约了时间却已经过去 */
+export const overdueRounds = (): PipelineRow[] =>
+  pipeline.filter((p) => p.nextIn !== null && p.nextIn < 0)
+
+/** 投出去超过 N 天没回音 */
+export const staleApplications = (days = 7): PipelineRow[] =>
+  pipeline.filter((p) => p.stage === '已投' && (p.appliedAge ?? 0) >= days)
+
+/** 还没长熟就进了面试的行：准备度低/中 */
+export const unreadyRows = (): PipelineRow[] =>
+  pipeline.filter((p) => isLive(p) && p.readinessScore > 0 && p.readinessScore <= 2)
+
+/* ==================== 卡片索引 ==================== */
+
+export const evidenceById = (id: string): EvidenceCard | undefined => evidence.find((e) => e.id === id)
+export const knowledgeById = (id: string): KnowledgeCard | undefined => knowledge.find((k) => k.id === id)
+
+/** 薄弱项：掌握度最低优先，其次越久没复习越靠前 */
+export const weakKnowledge = (limit = 6): KnowledgeCard[] =>
+  [...knowledge]
+    .filter((k) => k.levelScore <= 2)
+    .sort((a, b) => a.levelScore - b.levelScore || (b.reviewAge ?? 9999) - (a.reviewAge ?? 9999))
+    .slice(0, limit)
+
 /* ==================== 图标 ==================== */
 
 const SECTION_ICONS: Record<string, unknown> = {
@@ -212,6 +313,8 @@ const SECTION_ICONS: Record<string, unknown> = {
   doc: PhFileText,
   wrench: PhWrench,
   files: PhFiles,
+  kanban: PhKanban,
+  mic: PhMicrophone,
 }
 
 export const sectionIcon = (key: string): unknown => SECTION_ICONS[key] || PhFileText
@@ -227,6 +330,9 @@ export function inline(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-black">$1</strong>')
-    .replace(/`([^`]+)`/g, '<code class="rounded-[3px] bg-black/10 px-1 py-px text-[0.92em]">$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-ink">$1</strong>')
+    .replace(
+      /`([^`]+)`/g,
+      '<code class="rounded-[3px] bg-white/10 px-1 py-px font-mono text-[0.9em] text-ink">$1</code>',
+    )
 }

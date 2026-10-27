@@ -23,15 +23,17 @@ async function load(): Promise<MermaidApi> {
     startOnLoad: false,
     securityLevel: 'strict',
     theme: 'base',
-    fontFamily: "'Space Grotesk', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    fontFamily: "'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif",
     themeVariables: {
-      background: '#fffcf5',
-      primaryColor: '#ffe89b',
-      primaryTextColor: '#111111',
-      primaryBorderColor: '#111111',
-      lineColor: '#111111',
-      secondaryColor: '#bfe0ff',
-      tertiaryColor: '#e3d1ff',
+      background: 'transparent',
+      primaryColor: '#191a1c',
+      primaryTextColor: 'rgba(255,255,255,.87)',
+      primaryBorderColor: 'rgba(255,255,255,.16)',
+      lineColor: '#6b7280',
+      secondaryColor: 'rgba(94,106,210,.22)',
+      tertiaryColor: 'rgba(76,183,130,.18)',
+      noteBkgColor: '#16171a',
+      noteTextColor: 'rgba(255,255,255,.87)',
       fontSize: '13px',
     },
   })
@@ -59,7 +61,7 @@ watch(() => props.code, render)
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-lg border-2 border-black bg-neo-paper p-3">
+  <div class="overflow-x-auto rounded-md border border-line bg-base p-3">
     <p v-if="rendering" class="py-6 text-center text-xs font-bold text-neutral-400">正在渲染流程图…</p>
     <div ref="el" class="md-body flex justify-center" />
     <p v-if="error" class="mt-2 text-xs font-bold text-neutral-500">该 mermaid 图无法渲染：{{ error }}</p>

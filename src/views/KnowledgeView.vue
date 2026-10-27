@@ -1,223 +1,308 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { PhGraph, PhInfo, PhImage, PhCaretDown, PhClockCounterClockwise } from '@phosphor-icons/vue'
-import { knowledge, knowledgeByDomain, dueForReview, levelDistribution, inline, type KnowledgeCard } from '../data/store'
+import { computed, ref, watch } from 'vue'
+import { PhGraph, PhImage, PhArrowClockwise, PhBrain, PhCaretRight } from '@phosphor-icons/vue'
+import {
+  knowledge,
+  knowledgeByDomain,
+  dueForReview,
+  levelDistribution,
+  pipeline,
+  inline,
+  type KnowledgeCard,
+} from '../data/store'
 import Blocks from '../components/Blocks.vue'
 import MermaidBlock from '../components/MermaidBlock.vue'
 import GuidePanel from '../components/GuidePanel.vue'
 
 /**
- * 知识点：知识点按领域组织，每个知识点一张图。
- * 面试要的是「瞬时调取」而不是「理解」—— 所以卡片上先摆 trade-off 和数字，
- * 再给追问链，最后才是我在哪个项目里真的用过。
+ * 知识与薄弱项：左目录 / 中正文 / 右关联。
+ * 面试要的是「瞬时调取」而不是「理解」—— 所以正文先摆 trade-off 和数字，
+ * 再给追问链，右栏常驻掌握度、复习年龄和「哪些岗位正在考它」。
  */
-const expanded = ref<Record<string, boolean>>({})
-const toggle = (id: string): void => {
-  expanded.value[id] = !expanded.value[id]
-}
+defineEmits<{ (e: 'go', id: string): void }>()
 
-/** 这几个小节已经渲染在卡片正面了，展开时不用再出现一次 */
-const ON_CARD = new Set(['关键 trade-off', '必须记住的数字', '图', '面试追问链', '我的项目锚点'])
-const detailChunks = (k: KnowledgeCard) => k.chunks.filter((c) => !ON_CARD.has(c.name))
+const STALE_REVIEW_DAYS = 21
 
 const domains = computed(() => knowledgeByDomain())
 const dist = computed(() => levelDistribution())
-
-const LEVEL_CLASS: Record<string, string> = {
-  能讲: 'status-published',
-  熟练: 'status-ready',
-  理解: 'status-creating',
-  生疏: 'status-failed',
-}
-
-/** 超过 21 天没复习的算「该复习」 */
-const STALE_REVIEW_DAYS = 21
 const dueList = computed(() => dueForReview().filter((k) => (k.reviewAge ?? 9999) > STALE_REVIEW_DAYS))
 
-const totalDiagrams = computed(() => knowledge.reduce((s, c) => s + c.diagrams.length, 0))
-const missingDiagram = computed(() => knowledge.filter((c) => c.diagrams.length === 0).map((c) => c.id))
-const weak = computed(() => knowledge.filter((k) => k.levelScore > 0 && k.levelScore <= 2).map((k) => k.id))
+/** 展开的目录 */
+const open = ref<string[]>([])
+watch(
+  () => domains.value,
+  (d) => {
+    if (!open.value.length && d.length) open.value = [d[0].domain]
+  },
+  { immediate: true },
+)
+const toggleDir = (name: string): void => {
+  open.value = open.value.includes(name) ? open.value.filter((x) => x !== name) : [...open.value, name]
+}
+
+const selected = ref('')
+watch(
+  () => knowledge,
+  (list) => {
+    if (!list.some((k) => k.id === selected.value)) selected.value = dueList.value[0]?.id || list[0]?.id || ''
+  },
+  { immediate: true },
+)
+const active = computed(() => knowledge.find((k) => k.id === selected.value))
+
+const LEVEL_TONE: Record<string, string> = {
+  能讲: 'b-green',
+  熟练: 'b-blue',
+  理解: 'b-amber',
+  生疏: 'b-red',
+}
+
+/** 这些节已经在中栏单独渲染了，展开「更多」时才作为正文出现 */
+const ON_CARD = new Set(['关键 trade-off', '必须记住的数字', '图', '面试追问链', '我的项目锚点'])
+const restChunks = (k: KnowledgeCard) => k.chunks.filter((c) => !ON_CARD.has(c.name))
+
+const showRest = ref(false)
+watch(selected, () => (showRest.value = false))
+
+/** 「换一张该复习的」：跳过当前这张 */
+function pickNextDue() {
+  selected.value = dueList.value.find((k) => k.id !== selected.value)?.id || ''
+}
+
+/** 反查：哪些岗位把这张卡列为准备素材 / 缺这张卡的岗位 */
+const jobsUsing = computed(() =>
+  active.value ? pipeline.filter((p) => p.knowledgeIds.includes(active.value!.id)) : [],
+)
+const missingDiagram = computed(() => knowledge.filter((k) => k.diagrams.length === 0).map((k) => k.id))
 const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).map((k) => k.id))
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div class="neo-card">
-      <div class="flex items-start gap-3">
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border-2 border-black bg-neo-blue text-black">
-          <PhGraph :size="18" weight="bold" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <h2 class="text-2xl font-black leading-tight">知识点</h2>
-          <p class="mt-0.5 text-xs font-bold text-neutral-500">
-            知识点 + 图 · 来自 <code class="rounded bg-black/10 px-1">content/知识点/K-*.md</code>
-          </p>
+  <div class="mx-auto flex max-w-[1280px] gap-3">
+    <!-- 左：知识目录 -->
+    <aside class="w-[238px] shrink-0 flex flex-col gap-2">
+      <div v-if="dist.length" class="panel !p-2.5">
+        <div class="flex h-1.5 w-full overflow-hidden rounded-full bg-raised">
+          <span
+            v-for="d in dist"
+            :key="d.level"
+            class="h-full"
+            :class="LEVEL_TONE[d.level]"
+            :style="{ width: `${(d.count / knowledge.length) * 100}%` }"
+            :title="`${d.level} ${d.count}`"
+          />
         </div>
-      </div>
-      <p class="mt-3 text-sm leading-relaxed text-neutral-700">
-        面试时的问题不是「你懂不懂」，是「你在 5 秒内能不能调出来」。所以每张卡按这个顺序组织：
-        <span class="font-black">trade-off → 必须记住的数字 → 追问链 → 我的项目锚点</span>，
-        外加一张图作为第二条回忆通路。
-      </p>
-
-      <div v-if="knowledge.length" class="mt-3 grid grid-cols-2 gap-2 border-t-2 border-dashed border-neutral-300 pt-3 sm:grid-cols-4">
-        <div class="rounded-lg border-2 border-black bg-white p-2 shadow-neo-sm">
-          <div class="text-xl font-black">{{ knowledge.length }}</div>
-          <div class="text-[11px] font-bold text-neutral-500">个知识点</div>
-        </div>
-        <div class="rounded-lg border-2 border-black bg-white p-2 shadow-neo-sm">
-          <div class="text-xl font-black">{{ domains.length }}</div>
-          <div class="text-[11px] font-bold text-neutral-500">个领域</div>
-        </div>
-        <div class="rounded-lg border-2 border-black bg-white p-2 shadow-neo-sm">
-          <div class="text-xl font-black">{{ totalDiagrams }}</div>
-          <div class="text-[11px] font-bold text-neutral-500">张图</div>
-        </div>
-        <div class="rounded-lg border-2 border-black bg-white p-2 shadow-neo-sm">
-          <div class="text-xl font-black">{{ dueList.length }}</div>
-          <div class="text-[11px] font-bold text-neutral-500">个待复习</div>
-        </div>
-      </div>
-
-      <div v-if="dist.length" class="mt-3 flex flex-wrap items-center gap-2">
-        <span class="text-[11px] font-bold text-neutral-500">掌握度分布</span>
-        <span v-for="d in dist" :key="d.level" class="neo-chip !py-0 text-[10px]" :class="LEVEL_CLASS[d.level]">
-          {{ d.level }} {{ d.count }}
-        </span>
-      </div>
-
-      <div v-if="missingDiagram.length || weak.length" class="mt-3 rounded-lg border-2 border-black bg-neo-pink/40 p-3">
-        <p class="flex items-start gap-1.5 text-xs font-bold leading-relaxed">
-          <PhInfo :size="14" weight="bold" class="mt-0.5 shrink-0" />
-          <span>
-            待补齐 ——
-            <template v-if="missingDiagram.length">缺图：{{ missingDiagram.join(' / ') }}；</template>
-            <template v-if="weak.length">掌握度偏低：{{ weak.join(' / ') }}；</template>
-            <template v-if="noNumber.length">没有数字：{{ noNumber.join(' / ') }}。</template>
+        <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+          <span v-for="d in dist" :key="d.level" class="flex items-center gap-1 text-[10px] text-ink-3">
+            <span class="dot" :class="LEVEL_TONE[d.level]" />{{ d.level }} {{ d.count }}
           </span>
+        </div>
+      </div>
+
+      <div class="panel !p-0">
+        <div class="group-head border-b border-line">
+          <PhGraph :size="12" weight="bold" />
+          {{ knowledge.length }} 张卡 · {{ domains.length }} 个领域
+        </div>
+        <div class="max-h-[calc(100vh-250px)] overflow-y-auto p-1.5">
+          <p v-if="!knowledge.length" class="px-2 py-4 text-[11px] leading-relaxed text-ink-3">
+            还没有知识卡。从 <span class="font-mono text-ink-2">content/10-Areas/知识点/_模板.md</span> 复制一份，
+            改名 <span class="font-mono text-ink-2">K-001-知识点名.md</span> 即可。
+          </p>
+
+          <template v-for="g in domains" :key="g.domain">
+            <button class="row py-1.5 text-[12px] font-semibold text-ink-2 hover:text-ink" @click="toggleDir(g.domain)">
+              <PhCaretRight
+                :size="11"
+                weight="bold"
+                class="shrink-0 text-ink-3 transition-transform"
+                :class="open.includes(g.domain) ? 'rotate-90' : ''"
+              />
+              <span class="min-w-0 flex-1 truncate">{{ g.domain }}</span>
+              <span class="font-mono text-[10px] text-ink-3">{{ g.cards.length }}</span>
+            </button>
+            <button
+              v-for="k in open.includes(g.domain) ? g.cards : []"
+              :key="k.id"
+              class="row py-1.5 pl-7 text-[12px]"
+              :class="k.id === selected ? 'bg-raised text-ink' : 'text-ink-2'"
+              @click="selected = k.id"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ k.title }}</span>
+              <span class="dot shrink-0" :class="LEVEL_TONE[k.level] || 'b-gray'" />
+            </button>
+          </template>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 中：卡片正文 -->
+    <main v-if="active" class="min-w-0 flex-1 flex flex-col gap-3">
+      <section class="panel">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="chip chip-solid font-mono">{{ active.id }}</span>
+          <span v-if="active.level" class="chip"><span class="dot" :class="LEVEL_TONE[active.level]" />{{ active.level }}</span>
+          <span class="chip">
+            <PhArrowClockwise :size="10" weight="bold" />
+            {{ active.reviewAge === null ? '从未复习' : `${active.reviewAge} 天前复习` }}
+          </span>
+          <button class="btn ml-auto" :disabled="dueList.length < 2" @click="pickNextDue">
+            <PhBrain :size="12" weight="bold" />
+            换一张该复习的
+          </button>
+        </div>
+
+        <h2 class="mt-2 text-[18px] font-semibold leading-tight text-ink">{{ active.title }}</h2>
+        <p v-if="active.oneLine" class="mt-1.5 text-[13px] leading-relaxed text-ink-2" v-html="inline(active.oneLine)" />
+      </section>
+
+      <section v-if="active.tradeoffs.length" class="panel !p-0">
+        <div class="group-head border-b border-line">关键 trade-off</div>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-[13px]">
+            <tbody>
+              <tr
+                v-for="(r, i) in active.tradeoffs"
+                :key="i"
+                class="border-b border-line last:border-b-0"
+                :class="i % 2 ? 'bg-white/[0.02]' : ''"
+              >
+                <td
+                  v-for="h in Object.keys(active.tradeoffs[0])"
+                  :key="h"
+                  class="px-3 py-2 align-top leading-relaxed text-ink-2"
+                  v-html="inline(r[h] || '')"
+                />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section v-if="active.numbers.length" class="panel !p-0">
+        <div class="group-head border-b border-line">必须记住的数字</div>
+        <ul class="flex flex-col gap-1 p-3">
+          <li v-for="(n, i) in active.numbers" :key="i" class="flex gap-2 text-[13px] leading-relaxed text-ink-2">
+            <span class="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-amber" />
+            <span class="min-w-0" v-html="inline(n)" />
+          </li>
+        </ul>
+      </section>
+
+      <section v-for="d in active.diagrams" :key="d.id" class="panel !p-0">
+        <div class="group-head border-b border-line">
+          <PhImage :size="12" weight="bold" />
+          {{ d.name }}
+        </div>
+        <div class="p-3">
+          <MermaidBlock :id="`kn-${active.id}-${d.id}`" :code="d.code" />
+        </div>
+      </section>
+
+      <section v-if="restChunks(active).length || active.chunks.length" class="panel !p-0">
+        <button class="row h-auto border-b border-line hover:bg-transparent" @click="showRest = !showRest">
+          <span class="min-w-0 flex-1 text-[12px] font-semibold text-ink-2">正文其余部分</span>
+          <PhCaretRight :size="12" weight="bold" class="shrink-0 text-ink-3 transition-transform" :class="showRest ? 'rotate-90' : ''" />
+        </button>
+        <div v-if="showRest" class="flex flex-col gap-4 p-3.5">
+          <section v-for="(ch, ci) in restChunks(active)" :key="ci">
+            <h4 class="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">{{ ch.name }}</h4>
+            <Blocks :blocks="ch.blocks" :mid-prefix="`kn-${active.id}-${ci}`" compact />
+          </section>
+          <p v-if="!restChunks(active).length" class="text-[12px] text-ink-3">这张卡的正文都已经在上面了。</p>
+        </div>
+      </section>
+    </main>
+
+    <main v-else class="min-w-0 flex-1">
+      <div class="panel text-[13px] leading-relaxed text-ink-2">
+        面试时的问题不是「你懂不懂」，是「你在 5 秒内能不能调出来」。所以每张卡按这个顺序组织：
+        <span class="text-ink">trade-off → 必须记住的数字 → 追问链 → 项目锚点</span>，
+        外加一张图作为第二条回忆通路。
+      </div>
+    </main>
+
+    <!-- 右：关联与状态 -->
+    <aside v-if="active" class="flex w-[276px] shrink-0 flex-col gap-3">
+      <section class="panel !p-0">
+        <div class="group-head border-b border-line">面试追问链</div>
+        <ol class="flex flex-col gap-2 p-3">
+          <p v-if="!active.questions.length" class="text-[12px] leading-relaxed text-ink-3">
+            没有追问链 —— 这张卡在面试里帮不上忙。写下「面试官会接着问什么」。
+          </p>
+          <li v-for="(q, i) in active.questions" :key="i" class="flex gap-2 text-[12px] leading-relaxed text-ink-2">
+            <span class="shrink-0 font-mono text-[10px] text-ink-3">{{ i + 1 }}</span>
+            <span class="min-w-0" v-html="inline(q)" />
+          </li>
+        </ol>
+      </section>
+
+      <section class="panel !p-0">
+        <div class="group-head border-b border-line">我的项目锚点</div>
+        <ul class="flex flex-col gap-1.5 p-3">
+          <p v-if="!active.anchors.length" class="text-[12px] leading-relaxed text-ink-3">没有锚点 = 讲不出「我在哪用过它」。</p>
+          <li v-for="(a, i) in active.anchors" :key="i" class="flex gap-2 text-[12px] leading-relaxed text-ink-2">
+            <span class="mt-[7px] h-1 w-1 shrink-0 rounded-full b-green" />
+            <span class="min-w-0" v-html="inline(a)" />
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel !p-0">
+        <div class="group-head border-b border-line">哪些岗位在考它</div>
+        <div class="p-1.5">
+          <p v-if="!jobsUsing.length" class="px-2 py-3 text-[12px] leading-relaxed text-ink-3">
+            暂无岗位关联。想让它进面试，去 <span class="font-mono text-ink-2">岗位管道.md</span> 的「关联知识」列写上 {{ active.id }}。
+          </p>
+          <div v-for="p in jobsUsing" :key="p.key" class="row cursor-default py-1.5 text-[12px]">
+            <span class="dot shrink-0" :class="p.nextIn !== null && p.nextIn >= 0 ? 'b-amber' : 'b-gray'" />
+            <span class="min-w-0 flex-1 truncate text-ink-2">{{ p.company }} · {{ p.stage }}</span>
+            <span v-if="p.nextIn !== null && p.nextIn >= 0" class="shrink-0 font-mono text-[10px] text-amber">{{ p.nextIn }} 天</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel !p-0">
+        <div class="group-head border-b border-line">
+          <PhArrowClockwise :size="12" weight="bold" />
+          复习队列
+          <span class="ml-auto font-mono text-[10px] text-ink-3">{{ dueList.length }}</span>
+        </div>
+        <div class="max-h-[260px] overflow-y-auto p-1.5">
+          <p v-if="!dueList.length" class="px-2 py-3 text-[12px] text-ink-3">
+            {{ STALE_REVIEW_DAYS }} 天内都碰过。间隔重复比一次性背完有效得多。
+          </p>
+          <button
+            v-for="k in dueList"
+            :key="k.id"
+            class="row py-1.5 text-[12px]"
+            :class="k.id === selected ? 'bg-raised text-ink' : 'text-ink-2'"
+            @click="selected = k.id"
+          >
+            <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ k.id }}</span>
+            <span class="min-w-0 flex-1 truncate">{{ k.title }}</span>
+            <span class="shrink-0 font-mono text-[10px]" :class="k.reviewAge === null ? 'text-red' : 'text-amber'">
+              {{ k.reviewAge === null ? '从未' : `${k.reviewAge}天` }}
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <div
+        v-if="missingDiagram.length || noNumber.length"
+        class="panel flex items-start gap-2 border-amber/30 !bg-amber/[0.06]"
+      >
+        <span class="dot mt-1.5 shrink-0 b-amber" />
+        <p class="text-[12px] leading-relaxed text-ink-2">
+          待补齐 ——
+          <template v-if="missingDiagram.length">缺图：{{ missingDiagram.slice(0, 6).join(' / ') }}；</template>
+          <template v-if="noNumber.length">没有数字：{{ noNumber.slice(0, 6).join(' / ') }}。</template>
         </p>
       </div>
-    </div>
+    </aside>
+  </div>
 
-    <div v-if="!knowledge.length" class="neo-card">
-      <p class="text-sm font-bold text-neutral-600">
-        还没有知识卡。从 <code class="rounded bg-black/10 px-1">content/知识点/_模板.md</code> 复制一份，
-        改名为 <code class="rounded bg-black/10 px-1">K-001-知识点名.md</code> 就能开始写。
-      </p>
-    </div>
-
-    <div v-if="dueList.length" class="neo-card !bg-neo-yellow/40">
-      <h3 class="flex items-center gap-2 text-lg font-black">
-        <PhClockCounterClockwise :size="17" weight="bold" />
-        该复习了
-      </h3>
-      <p class="mt-1 text-xs font-bold text-neutral-600">超过 {{ STALE_REVIEW_DAYS }} 天没碰的知识点。间隔重复比一次性背完有效得多。</p>
-      <div class="mt-2 flex flex-wrap gap-2">
-        <span v-for="k in dueList" :key="k.id" class="neo-chip !border-2 bg-white">
-          {{ k.id }} {{ k.title }} · {{ k.reviewAge === null ? '从未复习' : k.reviewAge + ' 天' }}
-        </span>
-      </div>
-    </div>
-
-    <section v-for="g in domains" :key="g.domain" class="flex flex-col gap-3">
-      <h3 class="flex items-center gap-2 text-base font-black">
-        {{ g.domain }}
-        <span class="neo-chip !py-0 text-[10px]">{{ g.cards.length }}</span>
-      </h3>
-
-      <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <article v-for="k in g.cards" :key="k.id" class="neo-card flex flex-col">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="neo-chip !border-2 bg-black !text-white">{{ k.id }}</span>
-            <span v-if="k.level" class="neo-chip" :class="LEVEL_CLASS[k.level]">{{ k.level }}</span>
-            <span v-if="k.reviewAge !== null" class="neo-chip !py-0 text-[10px]">复习于 {{ k.reviewAge }} 天前</span>
-            <span v-else class="neo-chip !py-0 text-[10px] status-failed">从未复习</span>
-          </div>
-
-          <h4 class="mt-2 text-lg font-black leading-tight">{{ k.title }}</h4>
-          <p v-if="k.oneLine" class="mt-1 text-sm font-bold leading-relaxed text-neutral-700" v-html="inline(k.oneLine)" />
-
-          <div v-if="k.tradeoffs.length" class="mt-3">
-            <div class="mb-1 text-[11px] font-bold text-neutral-500">关键 trade-off</div>
-            <div class="overflow-x-auto rounded-lg border-2 border-black shadow-neo-sm">
-              <table class="w-full border-collapse text-[13px]">
-                <thead>
-                  <tr class="bg-black text-white">
-                    <th v-for="h in Object.keys(k.tradeoffs[0])" :key="h" class="px-2.5 py-1.5 text-left font-black">{{ h }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(r, i) in k.tradeoffs" :key="i" class="border-t border-black/15" :class="i % 2 ? 'bg-neo-yellow/15' : ''">
-                    <td
-                      v-for="h in Object.keys(k.tradeoffs[0])"
-                      :key="h"
-                      class="px-2.5 py-1.5 align-top leading-relaxed"
-                      v-html="inline(r[h] || '')"
-                    />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div v-if="k.numbers.length" class="mt-3 rounded-lg border-2 border-black bg-neo-yellow/40 p-2.5">
-            <div class="mb-1 text-[11px] font-bold text-neutral-600">必须记住的数字</div>
-            <ul class="flex flex-col gap-1">
-              <li v-for="(n, i) in k.numbers" :key="i" class="flex gap-2 text-[13px] leading-relaxed">
-                <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-black" />
-                <span class="min-w-0" v-html="inline(n)" />
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="k.diagrams.length" class="mt-3 flex flex-col gap-3">
-            <div v-for="d in k.diagrams" :key="d.id">
-              <div class="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-neutral-500">
-                <PhImage :size="12" weight="bold" />
-                {{ d.name }}
-              </div>
-              <MermaidBlock :id="`kn-${k.id}-${d.id}`" :code="d.code" />
-            </div>
-          </div>
-
-          <button class="neo-btn mt-3 w-full" @click="toggle(k.id)">
-            <PhCaretDown :size="13" weight="bold" :class="expanded[k.id] ? 'rotate-180' : ''" class="transition-transform" />
-            {{ expanded[k.id] ? '收起' : '追问链与项目锚点' }}
-          </button>
-
-          <div v-if="expanded[k.id]" class="mt-3 flex flex-col gap-3 border-t-2 border-dashed border-neutral-300 pt-3">
-            <div v-if="k.questions.length" class="rounded-lg border-2 border-black bg-neo-blue/30 p-2.5">
-              <div class="mb-1 text-[11px] font-bold text-neutral-600">面试追问链</div>
-              <ol class="flex flex-col gap-1">
-                <li v-for="(q, i) in k.questions" :key="i" class="flex gap-2 text-[13px] leading-relaxed">
-                  <span class="shrink-0 font-black">{{ i + 1 }}.</span>
-                  <span class="min-w-0" v-html="inline(q)" />
-                </li>
-              </ol>
-            </div>
-
-            <div v-if="k.anchors.length" class="rounded-lg border-2 border-black bg-neo-green/30 p-2.5">
-              <div class="mb-1 text-[11px] font-bold text-neutral-600">我的项目锚点</div>
-              <ul class="flex flex-col gap-1">
-                <li v-for="(a, i) in k.anchors" :key="i" class="flex gap-2 text-[13px] leading-relaxed">
-                  <span class="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-black" />
-                  <span class="min-w-0" v-html="inline(a)" />
-                </li>
-              </ul>
-            </div>
-
-            <section v-for="(ch, ci) in detailChunks(k)" :key="ci">
-              <h5 class="text-sm font-black">{{ ch.name }}</h5>
-              <div class="mt-1.5">
-                <Blocks :blocks="ch.blocks" :mid-prefix="`kn-${k.id}-${ci}`" compact />
-              </div>
-            </section>
-            <p class="text-[11px] text-neutral-400">{{ k.file }}</p>
-          </div>
-        </article>
-      </div>
-    </section>
-
+  <div v-if="!knowledge.length" class="mx-auto mt-3 max-w-[1280px]">
     <GuidePanel section-id="knowledge" />
   </div>
 </template>

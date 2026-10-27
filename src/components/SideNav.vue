@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { PhFlagBanner as PhBrand, PhWarningCircle } from '@phosphor-icons/vue'
-import { sectionGroups, sectionIcon, evidence, knowledge, emptySections, emptyCardDirs } from '../data/store'
+import { computed } from 'vue'
+import { PhFlagBanner as PhBrand, PhMagicWand } from '@phosphor-icons/vue'
+import { sectionGroups, sectionIcon, evidence, knowledge, pipeline, dueForReview } from '../data/store'
 
 defineProps<{ current: string }>()
 defineEmits<{ (e: 'select', id: string): void }>()
@@ -19,60 +20,52 @@ const groups = sectionGroups.map((g) => ({
   })),
 }))
 
-const todo = emptySections().length + emptyCardDirs().length
-const badge: Record<string, { n: number; cls: string }> = {
-  overview: { n: todo, cls: 'status-creating' },
-  evidence: { n: evidence.length, cls: 'status-ready' },
-  knowledge: { n: knowledge.length, cls: 'status-ready' },
-}
+const liveCount = computed(() => pipeline.filter((p) => p.stage !== '已结束' && p.stage !== '暂停').length)
 
-const hasBadge = (id: string): boolean => (badge[id]?.n || 0) > 0
+/** 右侧数字：只放「现在还能推进的」，不放总量 */
+const badge = computed<Record<string, number>>(() => ({
+  overview: dueForReview().length > 0 ? dueForReview().length : 0,
+  pipeline: liveCount.value,
+  evidence: evidence.length,
+  knowledge: knowledge.length,
+}))
 </script>
 
 <template>
-  <aside class="neo-card flex w-60 shrink-0 flex-col self-start p-4">
-    <div class="mb-4 flex items-center gap-2 px-1">
-      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border-2 border-black bg-neo-yellow text-black">
-        <PhBrand :size="16" weight="bold" />
+  <aside class="flex w-[216px] shrink-0 flex-col border-r border-line bg-panel">
+    <div class="flex h-11 items-center gap-2 border-b border-line px-3">
+      <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-brand text-white">
+        <PhBrand :size="12" weight="bold" />
       </span>
-      <div class="text-xl font-black leading-none tracking-tight">
-        职业工作台
-        <div class="mt-0.5 text-[11px] font-bold text-neutral-500">长期积累 · 求职</div>
+      <div class="min-w-0">
+        <div class="truncate text-[13px] font-semibold leading-tight text-ink">职业工作台</div>
       </div>
     </div>
 
-    <nav class="flex flex-col gap-1.5">
+    <nav class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
       <template v-for="group in groups" :key="group.title">
-        <div class="mt-3 px-2 text-xs font-bold text-neutral-500">{{ group.title }}</div>
+        <div class="group-head mt-1">{{ group.title }}</div>
         <button
           v-for="item in group.items"
           :key="item.id"
-          class="flex items-center gap-2.5 rounded-[6px] border-2 px-2.5 py-2 text-left text-sm transition-colors"
-          :class="
-            current === item.id
-              ? 'border-black bg-white font-black text-black shadow-neo-sm'
-              : 'border-transparent font-bold hover:bg-neo-yellow/60'
-          "
+          class="row py-[5px] text-[13px]"
+          :class="current === item.id ? 'bg-raised text-ink' : 'text-ink-2 hover:text-ink'"
           @click="$emit('select', item.id)"
         >
-          <span
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] border-2 border-black text-black"
-            :class="item.tone"
-          >
-            <component :is="item.icon" :size="14" weight="bold" />
+          <span class="flex h-4 w-4 shrink-0 items-center justify-center" :class="current === item.id ? 'text-ink' : 'text-ink-3'">
+            <component :is="item.icon" :size="15" weight="regular" />
           </span>
-          <span class="min-w-0 flex-1">{{ item.label }}</span>
-          <span v-if="hasBadge(item.id)" class="neo-chip !border-2 !px-1.5 !py-0 text-[10px]" :class="badge[item.id].cls">
-            {{ badge[item.id].n }}
-          </span>
+          <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+          <span v-if="badge[item.id]" class="font-mono text-[10px] text-ink-3">{{ badge[item.id] }}</span>
+          <span v-else class="dot opacity-0" :class="item.tone" />
         </button>
       </template>
     </nav>
 
-    <div v-if="todo" class="mt-6 border-t-2 border-dashed border-neutral-300 pt-4">
-      <p class="flex items-start gap-1.5 px-1 text-[11px] font-bold leading-tight text-neutral-500">
-        <PhWarningCircle :size="12" weight="bold" class="mt-0.5 shrink-0" />
-        还有 {{ todo }} 个板块是空的。骨架已经就位，填内容不用改代码。
+    <div class="border-t border-line px-3 py-2.5">
+      <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-3">
+        <PhMagicWand :size="12" weight="regular" class="mt-0.5 shrink-0" />
+        <span>板块由 <code class="font-mono text-ink-2">content/</code> 目录推导，放 md 即可，不改代码。</span>
       </p>
     </div>
   </aside>

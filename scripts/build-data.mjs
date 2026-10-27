@@ -18,10 +18,24 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..')
 const CONTENT = join(ROOT, 'content')
+// 本地私有副本：真实简历 / 成果卡 / 面试记录放这里，整目录 gitignored，只进构建产物不进公开仓。
+// 同名文件以私有为准，公开仓那份自动被盖掉。
+const PRIVATE = join(ROOT, 'content.private')
 const LEGACY = join(ROOT, '..', 'career-os')
 const OUT = join(ROOT, 'src/data/generated.json')
 
 const EXCLUDE_DIRS = new Set(['.git', 'node_modules', '.obsidian', '.trash', '.kiro', 'dist', '.vite'])
+
+/** content.private/.hidden —— 一行一个 content 相对路径，把公开示例从真实部署里剔掉 */
+const HIDDEN_FILE = join(PRIVATE, '.hidden')
+const hidden = new Set(
+  existsSync(HIDDEN_FILE)
+    ? readFileSync(HIDDEN_FILE, 'utf8')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s && !s.startsWith('#'))
+    : [],
+)
 // 成果卡（EX）目录：本公开仓库默认不含真实成果卡（隐私），保留常量以便本地私有副本启用
 const EVIDENCE_DIR = '项目成果'
 // 知识卡（K）目录：随 PARA 重构嵌套在 10-Areas 下
@@ -72,11 +86,11 @@ function tables(body) {
   })
 }
 
-/** "- item" / "* item" 列表 */
+/** "- item" / "* item" / "1. item"（K 卡的追问链用编号，锚点与数字用短横线，两种都要抽到） */
 function bullets(body) {
   return (body || '')
     .split('\n')
-    .map((l) => l.match(/^\s*[-*]\s+(.+)$/))
+    .map((l) => l.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/))
     .filter(Boolean)
     .map((m) => m[1].trim())
 }
@@ -211,6 +225,34 @@ function daysAgo(dateStr) {
   return Math.max(0, Math.round((today - t) / 86400000))
 }
 
+/**
+ * 从自由文本里抠出日期：`2026-10-28` / `10-28`（缺年份按今年补，落在过去则顺延一年）。
+ * 管道表里的「下一轮时间」是手写的，不能要求格式严格。
+ */
+function parseDate(text) {
+  const s = String(text || '')
+  const full = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (full) return `${full[1]}-${pad(full[2])}-${pad(full[3])}`
+  const short = s.match(/(?:^|[^\d])(\d{1,2})-(\d{1,2})(?!\d)/)
+  if (!short) return null
+  const y = today.getFullYear()
+  let iso = `${y}-${pad(short[1])}-${pad(short[2])}`
+  if (new Date(iso + 'T00:00:00') < today) {
+    iso = `${y + 1}-${pad(short[1])}-${pad(short[2])}`
+  }
+  return iso
+}
+
+const pad = (n) => String(n).padStart(2, '0')
+
+/** 距今天还有几天：负数=已过期 */
+function daysUntil(dateStr) {
+  if (!dateStr) return null
+  const t = new Date(String(dateStr) + 'T00:00:00')
+  if (Number.isNaN(t.getTime())) return null
+  return Math.round((t - today) / 86400000)
+}
+
 /** 把 md 拆成 { frontmatter, h1, intro, chunks } 通用结构 */
 function parseDoc(md) {
   const fm = frontmatter(md)
@@ -329,56 +371,90 @@ const PARA_GROUPS = {
   '30-Archive': 'Archive · 归档',
 }
 const GROUP_TO_ROOT = Object.fromEntries(Object.entries(PARA_GROUPS).map(([k, v]) => [v, k]))
-const GROUP_ORDER = ['Projects · 进行中', 'Areas · 长期资产', 'Resources · 参考', 'Archive · 归档']
+const GROUP_ORDER = ['工作台', 'Projects · 进行中', 'Areas · 长期资产', 'Resources · 参考', 'Archive · 归档']
 
 // 板块展示配置（键 = content/<PARA>/<板块> 的二层目录名）。
 // group 字段为兜底值，实际分组由文件所在 PARA 顶层目录推导覆盖。
+// tone = 导航状态点的色类（b-* 见 src/style.css）。
 const SECTION_DEFS = {
-  职业定位: { id: 'position', label: '职业定位', group: 'Areas · 长期资产', order: 2, icon: 'compass', tone: 'bg-neo-blue' },
-  目标岗位: { id: 'jobs', label: '目标岗位', group: 'Areas · 长期资产', order: 3, icon: 'target', tone: 'bg-neo-blue' },
-  公司准备: { id: 'companies', label: '公司准备', group: 'Projects · 进行中', order: 7, icon: 'buildings', tone: 'bg-neo-yellow' },
-  技术笔记: { id: 'tech-notes', label: '技术笔记', group: 'Resources · 参考', order: 5, icon: 'wrench', tone: 'bg-neo-pink' },
-  面试问答: { id: 'pitch', label: '面试问答', group: 'Resources · 参考', order: 6, icon: 'megaphone', tone: 'bg-neo-pink' },
-  使用说明: { id: 'method', label: '使用说明', group: 'Resources · 参考', order: 9, icon: 'info', tone: 'bg-neo-pink' },
-  决策日志: { id: 'decisions', label: '决策日志', group: 'Resources · 参考', order: 10, icon: 'notebook', tone: 'bg-neo-purple' },
+  职业定位: { id: 'position', label: '职业定位', group: 'Areas · 长期资产', order: 20, icon: 'compass', tone: 'b-blue' },
+  目标岗位: { id: 'jobs', label: '目标岗位', group: 'Areas · 长期资产', order: 21, icon: 'target', tone: 'b-blue' },
+  公司准备: { id: 'companies', label: '公司作战室', group: 'Projects · 进行中', order: 10, icon: 'buildings', tone: 'b-amber' },
+  技术笔记: { id: 'tech-notes', label: '技术笔记', group: 'Resources · 参考', order: 30, icon: 'wrench', tone: 'b-purple' },
+  面试问答: { id: 'pitch', label: '面试问答', group: 'Resources · 参考', order: 31, icon: 'megaphone', tone: 'b-purple' },
+  使用说明: { id: 'method', label: '使用说明', group: 'Resources · 参考', order: 39, icon: 'info', tone: 'b-purple' },
+  决策日志: { id: 'decisions', label: '决策日志', group: 'Resources · 参考', order: 40, icon: 'notebook', tone: 'b-purple' },
 }
 
-/** 内置视图：不走 content，由 Vue 组件直接实现（卡片墙 / 图谱这类需要专用布局） */
+/** 内置视图：不走 content，由 Vue 组件直接实现（管道 / 训练室 / 卡片墙这类需要专用布局） */
 const BUILTIN_NAV = [
-  { id: 'overview', label: '总览', group: 'Areas · 长期资产', order: 1, icon: 'gauge', tone: 'bg-neo-blue', builtin: true },
-  { id: 'evidence', label: '成果库', group: 'Areas · 长期资产', order: 3, icon: 'trophy', tone: 'bg-neo-blue', builtin: true },
-  { id: 'knowledge', label: '能力图谱', group: 'Areas · 长期资产', order: 4, icon: 'graph', tone: 'bg-neo-blue', builtin: true },
+  { id: 'overview', label: '首页', group: '工作台', order: 1, icon: 'gauge', tone: 'b-green', builtin: true },
+  { id: 'pipeline', label: '岗位与面试', group: '工作台', order: 2, icon: 'kanban', tone: 'b-amber', builtin: true },
+  { id: 'coach', label: 'AI 训练室', group: '工作台', order: 3, icon: 'mic', tone: 'b-brand', builtin: true },
+  { id: 'evidence', label: '项目与经历', group: '工作台', order: 4, icon: 'trophy', tone: 'b-blue', builtin: true },
+  { id: 'knowledge', label: '知识与薄弱项', group: '工作台', order: 5, icon: 'graph', tone: 'b-purple', builtin: true },
 ]
 
 /** 卡片板块单独解析，不进通用 DocView；它们的 _说明.md 挂到对应的内置视图上 */
 const CARD_DIR_TO_BUILTIN = { [KNOWLEDGE_DIR]: 'knowledge' }
 
 /**
+ * 某个板块目录下的 md 清单：并上 content/ 与 content.private/，同名只留私有那一份。
+ * content.private/.hidden 里按 content 相对路径列出的公开文件会被剔除（示例卡不上线用这个）。
+ * 返回 [文件名, 绝对路径]，按文件名排序，保证输出稳定。
+ */
+function mdFiles(dir) {
+  const map = new Map()
+  for (const base of [PRIVATE, CONTENT]) {
+    const abs = join(base, dir)
+    if (!existsSync(abs)) continue
+    for (const f of readdirSync(abs).filter((x) => x.endsWith('.md')).sort()) {
+      if (hidden.has(join(dir, f).replaceAll('\\', '/'))) continue
+      if (!map.has(f)) map.set(f, join(abs, f))
+    }
+  }
+  return [...map]
+}
+
+/** 两个根目录下的同级子目录名并集（用于发现只存在于私有副本里的板块） */
+function subDirNames(rel) {
+  const set = new Set()
+  for (const base of [PRIVATE, CONTENT]) {
+    const abs = join(base, rel)
+    if (!existsSync(abs)) continue
+    for (const e of readdirSync(abs, { withFileTypes: true })) {
+      if (e.isDirectory() && !e.name.startsWith('.')) set.add(e.name)
+    }
+  }
+  return [...set].sort()
+}
+
+/**
  * includeGuide = true 时只取 `_` 开头的文件（卡片目录的 _说明.md / _模板.md）。
  * 卡片本身不是文档，不能混进 docs —— 否则说明面板会取到某张卡的内容。
  */
 function parseSectionDocs(dir, includeGuide = false) {
-  const abs = join(CONTENT, dir)
-  if (!existsSync(abs)) return []
-  const files = readdirSync(abs)
-    .filter((f) => f.endsWith('.md') && (includeGuide ? f.startsWith('_') : !f.startsWith('_')))
-    .sort()
-  return files.map((f) => {
-    const md = readFileSync(join(abs, f), 'utf8')
-    const { fm, h1, intro, chunks } = parseDoc(md)
-    return {
-      name: basename(f, '.md'),
-      path: relative(ROOT, join(abs, f)).replaceAll('\\', '/'),
-      title: h1 || basename(f, '.md'),
-      version: (fm['版本'] || '').replace(/[*\s]/g, ''),
-      status: (fm['状态'] || '').replace(/[*\s]/g, ''),
-      updated: (fm['最后更新'] || '').replace(/[*\s]/g, '').slice(0, 10),
-      intro,
-      chunks: chunks.map(({ name, blocks }) => ({ name, blocks })),
-      flowCount: chunks.reduce((s, c) => s + c.blocks.filter((b) => b.type === 'mermaid').length, 0),
-      chars: md.length,
-    }
-  })
+  return mdFiles(dir)
+    .filter(([f]) => (includeGuide ? f.startsWith('_') : !f.startsWith('_')))
+    .map(([f, abs]) => {
+      const md = readFileSync(abs, 'utf8')
+      const { fm, h1, intro, chunks, head } = parseDoc(md)
+      // 语雀导出的文档常常整篇没有 `##` 分节，内容全落在 head —— 不兜底就会渲染成空白页
+      const rest = head.filter((b) => b.type !== 'quote')
+      const shown = chunks.length ? chunks : rest.length ? [{ name: '正文', blocks: rest }] : []
+      return {
+        name: basename(f, '.md'),
+        path: relative(ROOT, abs).replaceAll('\\', '/'),
+        title: h1 || basename(f, '.md'),
+        version: (fm['版本'] || '').replace(/[*\s]/g, ''),
+        status: (fm['状态'] || '').replace(/[*\s]/g, ''),
+        updated: (fm['最后更新'] || '').replace(/[*\s]/g, '').slice(0, 10),
+        intro,
+        chunks: shown.map(({ name, blocks }) => ({ name, blocks })),
+        flowCount: shown.reduce((s, c) => s + c.blocks.filter((b) => b.type === 'mermaid').length, 0),
+        chars: md.length,
+      }
+    })
 }
 
 function parseSections() {
@@ -394,20 +470,13 @@ function parseSections() {
     }
   }
 
-  // 扫描 PARA 顶层目录，二层目录即板块
-  const paraRoots = existsSync(CONTENT)
-    ? readdirSync(CONTENT, { withFileTypes: true })
-        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && PARA_GROUPS[e.name])
-        .map((e) => e.name)
-    : []
+  // 扫描 PARA 顶层目录，二层目录即板块（公开骨架 + 私有副本两处都要看到）
+  const paraRoots = subDirNames('').filter((name) => PARA_GROUPS[name])
 
   const seen = new Set()
   for (const root of paraRoots) {
     const group = PARA_GROUPS[root]
-    const subdirs = readdirSync(join(CONTENT, root), { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-      .map((e) => e.name)
-    for (const sub of subdirs) {
+    for (const sub of subDirNames(root)) {
       const dir = join(root, sub)
       if (seen.has(dir) || cardDirs.has(dir)) continue
       seen.add(dir)
@@ -417,7 +486,7 @@ function parseSections() {
         group,
         order: 50,
         icon: 'doc',
-        tone: 'bg-neo-pink',
+        tone: 'b-gray',
       }
       out.push({
         ...def,
@@ -467,29 +536,67 @@ function parseLegacy() {
   }
 }
 
+// ── 5. 岗位管道（content/00-Projects/岗位管道.md 的表格） ────────
+//
+// 一行一个「公司 × 岗位」，阶段决定它落在看板的哪一列。
+// 表格放在这个 md 的第一个 `|` 块里，其余正文写约定和复盘。
+
+const PIPELINE_FILE = [join(PRIVATE, '00-Projects', '岗位管道.md'), join(CONTENT, '00-Projects', '岗位管道.md')].find(
+  (p) => existsSync(p),
+)
+
+const STAGES = ['待投', '已投', '笔试测评', '一面', '二面', '三面', 'HR面', 'Offer', '暂停', '已结束']
+const READINESS_SCORE = { 高: 3, 中: 2, 低: 1 }
+
+function parsePipeline() {
+  if (!PIPELINE_FILE || !existsSync(PIPELINE_FILE)) return []
+  const md = readFileSync(PIPELINE_FILE, 'utf8')
+  const rows = tables(md)[0] || []
+  return rows.map((r, i) => {
+    const stage = cleanInline(r['阶段'] || '')
+    const applied = parseDate(r['投递日期'])
+    const nextAt = parseDate(r['下一轮时间'])
+    const readiness = cleanInline(r['准备度'] || '')
+    return {
+      key: `${cleanInline(r['公司'] || '未知')}-${cleanInline(r['岗位'] || i)}`,
+      company: cleanInline(r['公司'] || ''),
+      role: cleanInline(r['岗位'] || ''),
+      stage: STAGES.includes(stage) ? stage : '待投',
+      stageKnown: STAGES.includes(stage),
+      applied,
+      appliedRaw: cleanInline(r['投递日期'] || ''),
+      appliedAge: daysAgo(applied),
+      nextAt,
+      nextIn: daysUntil(nextAt),
+      nextRound: cleanInline(r['下一轮时间'] || ''),
+      action: cleanInline(r['下一步'] || ''),
+      readiness,
+      readinessScore: READINESS_SCORE[readiness] || 0,
+      evidenceIds: (r['关联成果'] || '').match(/EX-\d+/g) || [],
+      knowledgeIds: (r['关联知识'] || '').match(/K-\d+/g) || [],
+      row: i + 1,
+    }
+  })
+}
+
 // ── 汇总输出 ─────────────────────────────────────────────────
 
 const sections = parseSections()
 
-const evidence = existsSync(join(CONTENT, EVIDENCE_DIR))
-  ? readdirSync(join(CONTENT, EVIDENCE_DIR))
-      .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
-      .sort()
-      .map((f) => parseEvidenceCard(join(CONTENT, EVIDENCE_DIR, f), EVIDENCE_DIR))
-  : []
+const evidence = mdFiles(EVIDENCE_DIR)
+  .filter(([f]) => !f.startsWith('_'))
+  .map(([f, abs]) => parseEvidenceCard(abs, EVIDENCE_DIR))
 
-const knowledge = existsSync(join(CONTENT, KNOWLEDGE_DIR))
-  ? readdirSync(join(CONTENT, KNOWLEDGE_DIR))
-      .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
-      .sort()
-      .map((f) => parseKnowledgeCard(join(CONTENT, KNOWLEDGE_DIR, f), KNOWLEDGE_DIR))
-  : []
+const knowledge = mdFiles(KNOWLEDGE_DIR)
+  .filter(([f]) => !f.startsWith('_'))
+  .map(([f, abs]) => parseKnowledgeCard(abs, KNOWLEDGE_DIR))
 
 const data = {
   generatedAt: new Date().toISOString(),
   sections,
   evidence,
   knowledge,
+  pipeline: parsePipeline(),
   legacy: parseLegacy(),
 }
 
@@ -501,6 +608,7 @@ console.log(
   `[gen:data] 板块 ${sections.length}（内置 ${sections.length - secs.length} · 内容板块 ${secs.length}）` +
     ` · 成果卡 ${evidence.length}（${evidence.reduce((s, c) => s + c.diagrams.length, 0)} 张图）` +
     ` · 知识卡 ${knowledge.length}（${knowledge.reduce((s, c) => s + c.diagrams.length, 0)} 张图）` +
+    ` · 管道 ${data.pipeline.length} 条` +
     ` · 旧库 ${data.legacy ? data.legacy.mdTotal + ' 篇 md / ' + data.legacy.htmlTotal + ' 个 html' : '未找到'}` +
     ` → src/data/generated.json`,
 )

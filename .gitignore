@@ -14,6 +14,11 @@ dist-ssr
 .output
 *.local
 
+# 面试教练端点密钥（见 .env.example）
+.env
+.env.*
+!.env.example
+
 # 解析产物：由 scripts/build-data.mjs 生成，不入库
 src/data/generated.json
 
@@ -29,4 +34,5 @@ src/data/generated.json
 *.sw?
 
 # 隐私目录（真实简历 / 成果卡 / 面试记录 / 复盘）在本地私有副本维护，不进公开仓
-# content/简历  content/项目成果  content/面试记录  content/项目复盘
+# 目录内同名文件会盖住 content/ 那一份，只进构建产物（见 build-data.mjs 的 mdFiles）
+content.private/

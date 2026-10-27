@@ -1,175 +1,295 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @import "tailwindcss";
 
-/* Tailwind v4 主题令牌：生成 bg-neo-*、shadow-neo 等工具类 */
+/* ── 设计令牌：Linear 暗色 ──────────────────────────────────────
+   深色底 + 极细描边 + 三级文字，密度靠「行」而不是「卡片」堆出来。
+   Tailwind v4 的 @theme 会自动生成 bg-base / text-ink / border-line 等工具类。 */
 @theme {
-  --font-sans: 'Space Grotesk', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --color-neo-bg: #f7efe1;
-  --color-neo-paper: #fffcf5;
-  --color-neo-yellow: #ffe89b;
-  --color-neo-green: #b9f0c4;
-  --color-neo-pink: #ffd6e8;
-  --color-neo-blue: #bfe0ff;
-  --color-neo-purple: #e3d1ff;
-  --shadow-neo: 4px 4px 0px 0px rgba(0, 0, 0, 1);
-  --shadow-neo-lg: 8px 8px 0px 0px rgba(0, 0, 0, 1);
-  --shadow-neo-sm: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* 面 */
+  --color-base: #08090a;
+  --color-panel: #0f1011;
+  --color-raised: #191a1c;
+  --color-hover: #16171a;
+
+  /* 线 */
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-strong: rgba(255, 255, 255, 0.16);
+
+  /* 文字 */
+  --color-ink: rgba(255, 255, 255, 0.87);
+  --color-ink-2: #8a8f98;
+  --color-ink-3: #5e6268;
+
+  /* 品牌与状态 */
+  --color-brand: #5e6ad2;
+  --color-brand-hi: #6b76e0;
+  --color-brand-weak: rgba(94, 106, 210, 0.16);
+  --color-green: #4cb782;
+  --color-amber: #f0c000;
+  --color-red: #eb5757;
+  --color-blue: #6e9fe8;
+  --color-purple: #b59fff;
+
+  /* 阴影：Linear 用极短的投影，不做立体位移 */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 4px 20px rgba(0, 0, 0, 0.55);
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-neo-bg);
-  color: #111;
+  background-color: var(--color-base);
+  color: var(--color-ink);
   margin: 0;
   padding: 0;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-weight: 900;
-  color: #111;
+  font-weight: 600;
+  color: var(--color-ink);
+  letter-spacing: -0.01em;
 }
 
-/* Neo-Brutalism 组件类。
-   放进 @layer components：Tailwind 工具类在 utilities 层，特异性高于普通 CSS，
-   这样 text-sm、flex-1 等才能正常覆盖组件默认值。 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 组件类 ───────────────────────────────────────────────────
+   放进 @layer components：utilities 层特异性更高，text-xs、flex-1 等能正常覆盖默认值。 */
 @layer components {
-  .neo-card {
-    border: 2px solid #111;
-    border-radius: 0.75rem;
-    background: var(--color-neo-paper);
-    box-shadow: var(--shadow-neo);
-    padding: 1.25rem;
+  /* 容器：整页的一个区块 */
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: 8px;
+    padding: 14px 16px;
   }
 
-  .neo-btn {
+  /* 列表行：Linear 的基本单位是行，不是卡片 */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    text-align: left;
+    width: 100%;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.1s ease;
+  }
+
+  .row:hover { background: var(--color-hover); }
+  .row-active { background: var(--color-hover); border-color: var(--color-line-strong); }
+  .row-active:hover { background: var(--color-raised); }
+
+  /* 分组标题行 */
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-ink-3);
+  }
+
+  .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    border: 2px solid #111;
-    border-radius: 9999px;
-    background: var(--color-neo-paper);
-    box-shadow: var(--shadow-neo-sm);
-    padding: 0.5rem 1.125rem;
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: #111;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    border: 1px solid var(--color-line);
+    background: var(--color-raised);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--color-ink);
     cursor: pointer;
-    transition: all 0.1s ease;
     white-space: nowrap;
+    transition: all 0.1s ease;
   }
 
-  .neo-btn:hover {
-    transform: translate(1px, 1px);
-    box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+  .btn:hover { background: #232427; border-color: var(--color-line-strong); }
+  .btn:active { transform: translateY(0.5px); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-primary {
+    background: var(--color-brand);
+    border-color: transparent;
+    color: #fff;
   }
 
-  .neo-btn:active {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-  }
+  .btn-primary:hover { background: var(--color-brand-hi); border-color: transparent; }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--color-ink-2); }
+  .btn-ghost:hover { background: var(--color-hover); color: var(--color-ink); }
 
-  .neo-btn-primary { background: var(--color-neo-yellow); }
-  .neo-btn-success { background: var(--color-neo-green); }
-  .neo-btn-danger  { background: var(--color-neo-pink); }
-  .neo-btn-info    { background: var(--color-neo-blue); }
-
-  .neo-chip {
+  /* 标签 */
+  .chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    border: 2px solid #111;
-    border-radius: 9999px;
-    padding: 0.125rem 0.625rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    background: white;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--color-line);
+    background: var(--color-raised);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-ink-2);
     white-space: nowrap;
   }
 
-  .neo-input {
-    border: 2px solid #111;
-    border-radius: 0.5rem;
-    background: white;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.875rem;
+  .chip-solid { background: var(--color-brand-weak); border-color: transparent; color: #a8b0f0; }
+
+  /* 状态点 + 状态色（配色语义与 Linear 的 priority 一致） */
+  .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-ink-3);
   }
 
-  .neo-input:focus {
+  .t-green  { color: var(--color-green); }
+  .t-amber  { color: var(--color-amber); }
+  .t-red    { color: var(--color-red); }
+  .t-blue   { color: var(--color-blue); }
+  .t-purple { color: var(--color-purple); }
+  .b-green  { background: var(--color-green); }
+  .b-amber  { background: var(--color-amber); }
+  .b-red    { background: var(--color-red); }
+  .b-blue   { background: var(--color-blue); }
+  .b-purple { background: var(--color-purple); }
+  .b-brand  { background: var(--color-brand); }
+  .b-gray   { background: var(--color-ink-3); }
+
+  /* 表单 */
+  .input {
+    background: var(--color-base);
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+    color: var(--color-ink);
+    font-family: inherit;
+  }
+
+  .input::placeholder { color: var(--color-ink-3); }
+  .input:focus {
     outline: none;
-    box-shadow: var(--shadow-neo-sm);
+    border-color: var(--color-brand);
+    box-shadow: 0 0 0 2px var(--color-brand-weak);
+  }
+
+  textarea.input { line-height: 1.7; resize: vertical; }
+
+  /* 分段控件 */
+  .tabs {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 7px;
+    background: var(--color-base);
+    border: 1px solid var(--color-line);
+  }
+
+  .tab {
+    padding: 3px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-ink-2);
+    cursor: pointer;
+    transition: all 0.1s ease;
+  }
+
+  .tab:hover { color: var(--color-ink); }
+  .tab-active { background: var(--color-raised); color: var(--color-ink); box-shadow: var(--shadow-card); }
+
+  /* 键盘提示 */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 4px;
+    border: 1px solid var(--color-line);
+    background: var(--color-base);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-ink-3);
   }
 }
 
-/* 状态颜色 */
-.status-not-start  { background: #e5e5e5; }
-.status-creating   { background: var(--color-neo-yellow); }
-.status-ready      { background: var(--color-neo-blue); }
-.status-publishing { background: var(--color-neo-purple); }
-.status-published  { background: var(--color-neo-green); }
-.status-failed     { background: var(--color-neo-pink); }
-
-/* ── 产品工作台追加 ───────────────────────────────────────── */
-
-/* 层级色板：理解层 / 行动层 / 底座 */
-.layer-kernel { background: var(--color-neo-teal, #c9efe2); }
-.layer-action { background: var(--color-neo-yellow); }
-.layer-base   { background: var(--color-neo-blue); }
-
-/* Markdown 渲染区：md 正文里的裸 HTML 需要一套兜底排版 */
+/* ── Markdown 正文：md 里的裸 HTML 在深色下的兜底排版 ─────────── */
 .md-body {
-  font-size: 0.875rem;
+  font-size: 13.5px;
   line-height: 1.75;
-  color: #333;
+  color: var(--color-ink-2);
 }
 .md-body h1, .md-body h2, .md-body h3 {
-  font-weight: 900;
-  color: #111;
-  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin: 1.1rem 0 0.5rem;
 }
-.md-body h1 { font-size: 1.25rem; }
-.md-body h2 { font-size: 1.05rem; }
-.md-body h3 { font-size: 0.95rem; }
+.md-body h1 { font-size: 1.15rem; }
+.md-body h2 { font-size: 1rem; }
+.md-body h3 { font-size: 0.92rem; }
 .md-body p { margin: 0.5rem 0; }
 .md-body ul, .md-body ol { margin: 0.5rem 0 0.5rem 1.25rem; }
 .md-body li { margin: 0.2rem 0; }
-.md-body strong { font-weight: 800; color: #111; }
+.md-body strong { font-weight: 600; color: var(--color-ink); }
 .md-body code {
-  background: #f1efe8;
-  border: 1px solid #d3d1c7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--color-line);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
-  font-size: 0.8rem;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+  color: #d6d9e0;
 }
 .md-body pre {
-  background: #fffcf5;
-  border: 2px solid #111;
-  border-radius: 0.5rem;
+  background: var(--color-base);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
   padding: 0.75rem;
   overflow-x: auto;
   margin: 0.75rem 0;
 }
 .md-body pre code { background: none; border: none; padding: 0; }
 .md-body blockquote {
-  border-left: 4px solid #111;
-  padding-left: 0.875rem;
+  border-left: 2px solid var(--color-brand);
+  padding-left: 0.8rem;
   margin: 0.75rem 0;
-  color: #555;
-  font-style: normal;
+  color: var(--color-ink);
 }
 .md-body table {
   width: 100%;
   border-collapse: collapse;
   margin: 0.75rem 0;
-  font-size: 0.8125rem;
+  font-size: 12.5px;
 }
 .md-body th, .md-body td {
-  border: 2px solid #111;
+  border-bottom: 1px solid var(--color-line);
   padding: 0.4rem 0.6rem;
   text-align: left;
   vertical-align: top;
 }
-.md-body th { background: var(--color-neo-yellow); font-weight: 800; }
-.md-body hr { border: none; border-top: 2px dashed #d3d1c7; margin: 1rem 0; }
-.md-body a { color: #185fa5; text-decoration: underline; }
+.md-body th { color: var(--color-ink-3); font-weight: 600; background: var(--color-base); }
+.md-body hr { border: none; border-top: 1px solid var(--color-line); margin: 1rem 0; }
+.md-body a { color: var(--color-blue); text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
