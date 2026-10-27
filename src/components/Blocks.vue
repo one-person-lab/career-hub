@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inline, type Block } from '../data/store'
+import { inline, type Block } from '../data/types'
 import MermaidBlock from './MermaidBlock.vue'
 
 /**
