@@ -10,10 +10,10 @@
     "prebuild": "npm run gen:data --silent",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "dev:demo": "vite --mode demo",
-    "build:demo": "npm run gen:data && vue-tsc -b && vite build --mode demo && node scripts/check-demo.mjs",
-    "preview:demo": "vite preview --mode demo",
-    "check:demo": "node scripts/check-demo.mjs"
+    "dev:show": "vite --mode show",
+    "build:show": "npm run gen:data && vue-tsc -b && vite build --mode show && node scripts/check-show.mjs",
+    "preview:show": "vite preview --mode show",
+    "check:show": "node scripts/check-show.mjs"
   },
   "dependencies": {
     "@phosphor-icons/vue": "^2.2.1",

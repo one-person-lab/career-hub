@@ -76,16 +76,16 @@ export default defineConfig(({ mode }) => {
 
   // 演示产物：独立入口 + 独立目录。私有视图（管道 / 训练室 / 知识卡）不进依赖图，
   // generated.json 也不进 —— 隔离发生在构建层，不靠前端隐藏。
-  const demo = mode === 'demo'
+  const show = mode === 'show'
 
   return {
     plugins: [vue(), portfolioStatic(), coachApi()],
-    server: { port: 5175, open: demo ? '/demo.html' : undefined },
+    server: { port: 5175, open: show ? '/show.html' : undefined },
     build: {
-      outDir: demo ? 'dist-demo' : 'dist',
-      // 产物入口仍叫 demo.html（不是 index.html）：本机共享屏幕直接开它；
-      // 若要挂子域名根路径，在 vhost 里给 / 兜底到 /demo.html，不改构建
-      rollupOptions: { input: path.resolve(HERE, demo ? 'demo.html' : 'index.html') },
+      outDir: show ? 'dist-show' : 'dist',
+      // 产物入口仍叫 show.html（不是 index.html）：本机共享屏幕直接开它；
+      // 若要挂子域名根路径，在 vhost 里给 / 兜底到 /show.html，不改构建
+      rollupOptions: { input: path.resolve(HERE, show ? 'show.html' : 'index.html') },
     },
   }
 })

@@ -10,7 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-dist-demo
+dist-show
 .vite
 .output
 *.local
@@ -22,7 +22,7 @@ dist-demo
 
 # 解析产物：由 scripts/build-data.mjs 生成，不入库
 src/data/generated.json
-src/data/generated.demo.json
+src/data/generated.show.json
 
 # Editor directories and files
 .vscode/*

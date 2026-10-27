@@ -3,23 +3,23 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { PhTrophy, PhImage, PhPlay, PhArrowLeft, PhArrowRight } from '@phosphor-icons/vue'
 import Blocks from './components/Blocks.vue'
 import MermaidBlock from './components/MermaidBlock.vue'
-import { demoCards, type DemoCard } from './data/demo-store'
+import { showCards, type ShowCard } from './data/show-store'
 import { inline } from './data/types'
 
 /**
- * 面试演示：只读投影，数据来自 generated.demo.json。
+ * 面试演示：只读投影，数据来自 generated.show.json。
  * 「影响」表和架构图单独前置 —— 面试官先要结果，再要实现。
  */
 const idx = ref(0)
-const active = computed<DemoCard | null>(() => demoCards[idx.value] ?? null)
+const active = computed<ShowCard | null>(() => showCards[idx.value] ?? null)
 
 function select(i: number) {
   idx.value = i
 }
 
 function move(step: number) {
-  if (demoCards.length < 2) return
-  idx.value = (idx.value + step + demoCards.length) % demoCards.length
+  if (showCards.length < 2) return
+  idx.value = (idx.value + step + showCards.length) % showCards.length
 }
 
 function onKey(e: KeyboardEvent) {
@@ -39,13 +39,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </span>
       <h1 class="min-w-0 truncate text-[13px] font-semibold text-ink">{{ active?.title || '项目介绍' }}</h1>
       <span class="shrink-0 font-mono text-[11px] text-ink-3">
-        {{ demoCards.length ? `${idx + 1}/${demoCards.length}` : '0' }}
+        {{ showCards.length ? `${idx + 1}/${showCards.length}` : '0' }}
       </span>
 
       <div class="ml-auto flex shrink-0 items-center gap-2">
         <a
-          v-if="active?.demoLink"
-          :href="active.demoLink"
+          v-if="active?.showLink"
+          :href="active.showLink"
           target="_blank"
           rel="noreferrer"
           class="btn btn-primary"
@@ -53,10 +53,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <PhPlay :size="13" weight="bold" />
           打开现场演示
         </a>
-        <button class="btn btn-ghost" :disabled="demoCards.length < 2" @click="move(-1)">
+        <button class="btn btn-ghost" :disabled="showCards.length < 2" @click="move(-1)">
           <PhArrowLeft :size="13" weight="bold" />
         </button>
-        <button class="btn btn-ghost" :disabled="demoCards.length < 2" @click="move(1)">
+        <button class="btn btn-ghost" :disabled="showCards.length < 2" @click="move(1)">
           <PhArrowRight :size="13" weight="bold" />
         </button>
       </div>
@@ -70,7 +70,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <aside class="hidden min-h-0 flex-col overflow-y-auto border-r border-line bg-panel px-2 py-2 lg:flex">
         <div class="group-head mt-1">项目</div>
         <button
-          v-for="(c, i) in demoCards"
+          v-for="(c, i) in showCards"
           :key="c.id"
           class="row py-[6px] text-[13px]"
           :class="i === idx ? 'bg-raised text-ink' : 'text-ink-2 hover:text-ink'"
@@ -119,7 +119,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <PhImage :size="12" weight="regular" />
                 {{ d.name }}
               </h2>
-              <MermaidBlock :id="`demo-${active.id}-${d.id}`" :code="d.code" />
+              <MermaidBlock :id="`show-${active.id}-${d.id}`" :code="d.code" />
             </div>
           </section>
 
@@ -129,7 +129,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             class="panel flex flex-col gap-2 p-4"
           >
             <h2 class="text-[12px] font-semibold text-ink-2">{{ ch.name }}</h2>
-            <Blocks :blocks="ch.blocks" :mid-prefix="`demo-${active.id}-${ci}`" />
+            <Blocks :blocks="ch.blocks" :mid-prefix="`show-${active.id}-${ci}`" />
           </section>
         </div>
       </div>

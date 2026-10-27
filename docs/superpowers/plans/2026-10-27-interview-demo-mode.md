@@ -896,3 +896,5 @@ git commit -m "feat: 演示产物指纹自检并接入上线链"
 | 去掉 `演示隐藏` 行 | 私密段回来 | 实测该段连同它的图一起进包（同上，反向证明删段开关真在生效） |
 
 `--demo` 分支用 `/tmp/fakebin` 里的假 `rsync`/`ssh` 干跑过一遍，确认它跳过主站构建、先自检再推、推完 `exit 0` 不碰 coach 代理；**没有向服务器发起任何真实上线**。全量站 `career.buildhub.cn` 本次未动。
+
+**改名（2026-10-27 交付后追加）**：`demo` 这个名字整体换成 `show`，对外子域名定为 `show.buildhub.cn`（`case` 会撞 JS 保留字）。英文标识符全链路跟着换：`show.html` / `src/show-main.ts` / `src/ShowApp.vue` / `src/data/show-store.ts` / `generated.show.json` / `scripts/check-show.mjs` / `dist-show` / vite mode `show` / `dev:show` `build:show` `check:show` / `--show` / `WEB_SHOW_ROOT`；卡上的 frontmatter 字段仍是中文 `演示:` `演示隐藏:` `演示链接:`，只有 JSON 里的键从 `demo*` 变 `show*`。本计划正文里残留的 `demo` 字样是执行当时的原名，不再回改。
