@@ -128,11 +128,36 @@ cp .env.example .env   # 填 COACH_API_BASE / COACH_API_KEY / COACH_MODEL（Open
 
 > `vite.config.ts` 的 `portfolioStatic()` 把 `/portfolio/*` 映射到 `../career-os/04-作品集/personal-website/`（可选）。需与 `career-os` 同工作区，且仅在 dev / preview 生效；缺该目录时自动跳过，不影响主功能。
 
+## 面试演示模式
+
+平时用工作台备考，面试时只给人看你自己决定展示的东西。这是一条独立的产物链，不是主站上的一个「隐藏」开关。
+
+数据源不变，仍读 `content/项目成果/EX-*.md`，不另建一套内容。卡上三个字段决定它能不能被看到：
+
+| frontmatter | 作用 |
+|------|------|
+| `演示: 是` | 这张卡才进演示包；不写就不进 |
+| `演示隐藏: 复盘` | 按 `## 段名` 删段，段里的图一起删 |
+| `演示链接: https://…` | 变成演示页右上角的「打开现场演示」按钮 |
+
+```bash
+npm run dev:demo     # 本地全屏演示，面试前自己排练（方向键切卡）
+npm run build:demo   # 出 dist-demo/，构建完自动跑数据层自检
+npm run check:demo -- --dist   # 连产物一起扫（见下）
+```
+
+隔离做在构建层：演示页只 import `generated.demo.json`，主站的私有视图（管道 / 训练室 / 知识卡）和全量 `generated.json` 根本不进那个包的依赖图。为了让这条链真的断掉，块渲染层拆到了 `src/data/types.ts`——只引它，不引 `store.ts`。
+
+自检分两层，都由 `scripts/check-demo.mjs` 出：数据层比对投影（越权发布、漏发布、内部字段、隐藏段、图的残留与丢失）；产物层从全量数据**现算**一批私有指纹（未发布的卡名、知识卡标题与数字、管道公司名与下一步、板块与文档标题），到 `dist-demo` 的每个文件里搜，命中即失败，另外还查 `content.private` 路径与 `/api/coach` 调用。指纹不是手写黑名单，加内容不用改脚本。
+
+> 演示产物入口文件叫 `demo.html`（不是 `index.html`）。本机共享屏幕直接开它；要挂子域名根路径，在 vhost 里给 `/` 兜底到 `/demo.html`，不改构建。
+
 ## 上线到 career.buildhub.cn
 
 ```bash
-bash scripts/publish-web.sh              # 构建（含 content.private）→ 推静态 → 重启教练代理
+bash scripts/publish-web.sh              # 构建（含 content.private）→ 自检 → 推静态 → 重启教练代理
 bash scripts/publish-web.sh --skip-build # 复用现有 dist
+bash scripts/publish-web.sh --demo       # 只上线演示产物到 demo 目录，自检不过就停，不碰代理
 ```
 
 方向只有一个：这台机器 → 服务器。服务器上不存放内容源，也不在那边改。

@@ -7,7 +7,7 @@
  *
  * 退出码非 0 = 不通过。上线脚本在推产物之前会先跑它。
  */
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -95,6 +95,61 @@ check(hitTitles.length === 0, `[标题泄漏] 演示包出现未发布项目：$
 // 8. 知识卡与管道完全不进演示包
 check(!demoText.includes('面试追问链') && !demoText.includes('掌握度'), '[串包] 演示包含知识卡字段')
 check(!('pipeline' in demo) && !('knowledge' in demo) && !('sections' in demo), '[串包] 演示包含私有分区')
+
+// ── 产物层 ────────────────────────────────────────────────
+// 指纹不是手写的黑名单，而是从全量 generated.json 现算的「私有内容独有的字符串」，
+// 再到 dist-demo 的产物文本里逐个搜。任何一条命中就说明包串了。
+if (process.argv.includes('--dist')) {
+  const DIST = join(ROOT, 'dist-demo')
+  if (!existsSync(DIST)) {
+    console.error('[check-demo] 缺 dist-demo/ —— 先跑 npm run build:demo')
+    process.exit(1)
+  }
+  const files = []
+  const collect = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name)
+      if (e.isDirectory()) collect(p)
+      else if (/\.(js|css|html|json)$/.test(e.name)) files.push(p)
+    }
+  }
+  collect(DIST)
+  const bundle = files.map((p) => readFileSync(p, 'utf8')).join('\n')
+  const squeezed = bundle.replace(/\s+/g, '')
+
+  const demoIds = new Set(demo.cards.map((c) => c.id))
+  const fingerprints = [
+    ...priv.evidence.filter((c) => !demoIds.has(c.id)).map((c) => c.title),
+    ...priv.knowledge.map((k) => k.title),
+    ...priv.knowledge.flatMap((k) => k.numbers || []),
+    ...priv.pipeline.map((p) => p.company),
+    ...priv.pipeline.map((p) => p.action),
+    ...priv.sections.map((s) => s.label),
+    ...priv.sections.flatMap((s) => s.docs.map((d) => d.title)),
+  ]
+    .filter(Boolean)
+    .filter((t) => String(t).length >= 3)
+
+  const hits = fingerprints.filter((t) => bundle.includes(t))
+  check(hits.length === 0, `[指纹命中] dist-demo 里出现私有内容：${hits.slice(0, 8).join(' / ')}`)
+
+  // 隐藏段即使在已发布的卡里也不能留正文
+  for (const c of demo.cards) {
+    const src = srcById[c.id]
+    for (const h of src?.demoHidden || []) {
+      const body = (src.chunks.find((x) => x.name === h) || {}).raw || ''
+      const probe = body.replace(/\s+/g, '').slice(0, 24)
+      if (probe.length >= 12) {
+        check(!squeezed.includes(probe), `[隐藏段正文残留] ${c.id} 的「${h}」仍在产物里`)
+      }
+    }
+  }
+
+  check(!bundle.includes('content.private'), '[路径泄漏] dist-demo 里出现 content.private')
+  check(!bundle.includes('/api/coach'), '[接口泄漏] dist-demo 里挂了面试教练代理调用')
+
+  console.log(`[check-demo] 产物层扫描 ${files.length} 个文件、${fingerprints.length} 条指纹`)
+}
 
 if (fails.length) {
   for (const f of fails) console.error(f)

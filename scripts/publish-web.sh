@@ -7,6 +7,7 @@
 #   bash scripts/publish-web.sh                 # 构建 + 推静态 + 重启代理
 #   bash scripts/publish-web.sh --skip-build    # 复用现有 dist
 #   bash scripts/publish-web.sh --no-coach      # 只推静态
+#   bash scripts/publish-web.sh --demo          # 只构建并上线演示产物（自检不过就停）
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,10 +17,12 @@ APP="${WEB_APP:-/opt/career-hub}"
 
 SKIP_BUILD=0
 NO_COACH=0
+DEMO_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1; shift ;;
     --no-coach) NO_COACH=1; shift ;;
+    --demo) DEMO_ONLY=1; shift ;;
     *) echo "未知参数：$1" >&2; exit 2 ;;
   esac
 done
@@ -27,9 +30,30 @@ done
 cd "$ROOT"
 [[ -d content.private ]] || echo "[publish] 注意：没有 content.private/，这次上线的是公开示例内容"
 
-if [[ "$SKIP_BUILD" == 0 ]]; then
+if [[ "$SKIP_BUILD" == 0 && "$DEMO_ONLY" == 0 ]]; then
   echo "[publish] 构建"
   npm run build >/dev/null
+fi
+
+# 演示产物：只推 dist-demo，跳过 coach 代理；自检不过就不推
+if [[ "$DEMO_ONLY" == 1 ]]; then
+  DEMO_ROOT="${WEB_DEMO_ROOT:-/www/wwwroot/demo.buildhub.cn}"
+  if [[ "$SKIP_BUILD" == 0 ]]; then
+    echo "[publish] 构建演示产物"
+    npm run build:demo >/dev/null
+  fi
+  echo "[check] 演示包自检"
+  node scripts/check-demo.mjs --dist
+  echo "[publish] dist-demo → $HOST:$DEMO_ROOT"
+  rsync -az --delete dist-demo/ "$HOST:$DEMO_ROOT/"
+  ssh "$HOST" "chown -R www:www $DEMO_ROOT && find $DEMO_ROOT -type d -exec chmod 755 {} + && find $DEMO_ROOT -type f -exec chmod 644 {} +"
+  echo "[publish] 完成（演示，不重启 coach 代理）"
+  exit 0
+fi
+
+if [[ "$SKIP_BUILD" == 0 ]]; then
+  echo "[publish] 演示包自检"
+  npm run check:demo --silent
 fi
 
 echo "[publish] dist → $HOST:$WEB"
