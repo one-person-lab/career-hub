@@ -59,7 +59,7 @@
 - `src/data/types.ts` 导出 `type Block`、`type Chunk`、`type Diagram`、`function inline(text: string): string`
 - `src/data/store.ts` 仍导出同名符号（`export * from './types'`），既有 10 个消费方零改动
 
-- [ ] **Step 1: 创建 `src/data/types.ts`**
+- [x] **Step 1: 创建 `src/data/types.ts`**
 
 内容从 `store.ts` 原样搬过来，不改一个字（块类型 + 全站唯一富文本出口）：
 
@@ -106,7 +106,7 @@ export function inline(text: string): string {
 }
 ```
 
-- [ ] **Step 2: 改 `src/data/store.ts`**
+- [x] **Step 2: 改 `src/data/store.ts`**
 
 删除 `export type Block = ...` 到 `export interface Diagram {...}` 整段（现 20-40 行），在原位置改为一行 re-export，让 `store.ts` 的既有消费方（`App.vue`、9 个 view、4 个 component）继续按原路径取：
 
@@ -116,23 +116,23 @@ export * from './types'
 
 再删除文件末尾的 `export function inline(...)` 整段（现 324-338 行，含上方注释）。`store.ts` 内部不调用 `inline`，所以不需要 import 它；删掉即可。
 
-- [ ] **Step 3: 改 `src/components/Blocks.vue:2`**
+- [x] **Step 3: 改 `src/components/Blocks.vue:2`**
 
 ```ts
 import { inline, type Block } from '../data/types'
 ```
 
-- [ ] **Step 4: 验证全量构建没坏**
+- [x] **Step 4: 验证全量构建没坏**
 
 Run: `npm run build`
 Expected: `vue-tsc -b` 无报错，`vite build` 产出 `dist/`，结尾无 `error TS` 行。
 
-- [ ] **Step 5: 验证运行时页面照旧**
+- [x] **Step 5: 验证运行时页面照旧**
 
 Run: `npm run dev`，浏览器打开 `http://127.0.0.1:5175`（注意本机 vite 绑 IPv6 时改用 `http://localhost:5175`）。
 Expected: 首页 / 项目与经历 / 知识与薄弱项 三页正常渲染，成果卡详情里的表格和 mermaid 图仍在。截图留作验收证据。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/data/types.ts src/data/store.ts src/components/Blocks.vue
@@ -155,7 +155,7 @@ git commit -m "refactor: 抽出无数据依赖的共享层，为演示产物切�
 - `DemoCard` 字段（Task 3/4 依赖这些确切名字）：`id, title, oneLine, type, period, role, scale, demoLink, impact, impactHead, diagrams, chunks`
 - `EvidenceCard` 新增内部字段：`demo: boolean`、`demoHidden: string[]`、`demoLink: string`（只存在于全量 `generated.json`）
 
-- [ ] **Step 1: 写失败的自检脚本 `scripts/check-demo.mjs`**
+- [x] **Step 1: 写失败的自检脚本 `scripts/check-demo.mjs`**
 
 ```js
 #!/usr/bin/env node
@@ -249,12 +249,12 @@ if (fails.length) {
 console.log(`[check-demo] 数据层通过：演示卡 ${demo.cards.length}/${priv.evidence.length}`)
 ```
 
-- [ ] **Step 2: 跑起来确认失败**
+- [x] **Step 2: 跑起来确认失败**
 
 Run: `node scripts/check-demo.mjs`
 Expected: `FAIL` —— 报 `缺 src/data/generated.demo.json —— 先跑 npm run gen:data`，退出码 1。
 
-- [ ] **Step 3: 在 `scripts/build-data.mjs` 里解析三个发布字段**
+- [x] **Step 3: 在 `scripts/build-data.mjs` 里解析三个发布字段**
 
 `parseEvidenceCard`（现 299-326 行）的返回对象里，在 `hasStar` 之后插入：
 
@@ -265,7 +265,7 @@ Expected: `FAIL` —— 报 `缺 src/data/generated.demo.json —— 先跑 npm 
     demoLink: (fm['演示链接'] || '').trim(),
 ```
 
-- [ ] **Step 4: 加演示投影函数**
+- [x] **Step 4: 加演示投影函数**
 
 放在 `parseEvidenceCard` 之后、`// ── 2. 知识卡` 注释之前：
 
@@ -308,7 +308,7 @@ function toDemoCard(c) {
 }
 ```
 
-- [ ] **Step 5: 输出 `generated.demo.json`**
+- [x] **Step 5: 输出 `generated.demo.json`**
 
 文件顶部常量区（现 25 行 `const OUT` 之后）加：
 
@@ -339,7 +339,7 @@ console.log(
 )
 ```
 
-- [ ] **Step 6: 给示例卡补上三个字段（示范用法，也是 gate 的正例）**
+- [x] **Step 6: 给示例卡补上三个字段（示范用法，也是 gate 的正例）**
 
 `content/项目成果/EX-900-示例项目B签到高并发改造.md` 的 frontmatter 里，`可复用` 行之后加两行；并在文末已有的 `## 复盘` 段保持不动，用它验证「段被删掉且不留图」：
 
@@ -366,7 +366,7 @@ frontmatter 里写 `演示: 是`，这张卡才会进 `npm run build:demo` 的�
 `演示链接: https://…` 会在演示页上变成一个「打开现场演示」按钮，只放你自己确认可以公开的外链。
 ```
 
-- [ ] **Step 7: 跑起来确认通过**
+- [x] **Step 7: 跑起来确认通过**
 
 Run: `npm run gen:data && node scripts/check-demo.mjs`
 Expected: `[gen:data] … 成果卡 1（演示 1 张 …）…` 然后 `[check-demo] 数据层通过：演示卡 1/1`，退出码 0。
@@ -377,7 +377,7 @@ Expected: `[gen:data] … 成果卡 1（演示 1 张 …）…` 然后 `[check-d
 
 **验完把两行字段恢复成 Step 6 的写法**，再跑一次 `npm run gen:data && node scripts/check-demo.mjs` 确认 `演示卡 1/1` 且 `grep -c 复盘 src/data/generated.demo.json` 为 0。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scripts/build-data.mjs scripts/check-demo.mjs content/项目成果/
@@ -402,7 +402,7 @@ git commit -m "feat: 成果卡加演示发布字段，产出隔离的 generated.
 - `src/data/demo-store.ts` 导出 `interface DemoCard`、`const demoCards: DemoCard[]`、`const demoGeneratedAt: string`
 - `npm run build:demo` → `dist-demo/`；`npm run dev:demo` → 打开 `/demo.html`
 
-- [ ] **Step 1: `src/data/demo-store.ts`**
+- [x] **Step 1: `src/data/demo-store.ts`**
 
 注意：这个文件**不能** import `./store`，否则全量私有 JSON 进包（Task 1 就是为了断开这条边）。
 
@@ -431,7 +431,7 @@ export const demoCards: DemoCard[] = (r.cards as DemoCard[]) ?? []
 export const demoGeneratedAt: string = (r.generatedAt as string) ?? ''
 ```
 
-- [ ] **Step 2: `demo.html`**
+- [x] **Step 2: `demo.html`**
 
 和 `index.html` 同构，但标题中性（共享屏幕时浏览器标签页也会被人看到）：
 
@@ -452,7 +452,7 @@ export const demoGeneratedAt: string = (r.generatedAt as string) ?? ''
 </html>
 ```
 
-- [ ] **Step 3: `src/demo-main.ts`**
+- [x] **Step 3: `src/demo-main.ts`**
 
 ```ts
 import { createApp } from 'vue'
@@ -462,7 +462,7 @@ import DemoApp from './DemoApp.vue'
 createApp(DemoApp).mount('#app')
 ```
 
-- [ ] **Step 4: `vite.config.ts` 按 mode 切换输入与输出**
+- [x] **Step 4: `vite.config.ts` 按 mode 切换输入与输出**
 
 把 `export default defineConfig(({ mode }) => {…})` 的返回对象改成（`plugins`、`server.port` 保持原样）：
 
@@ -487,7 +487,7 @@ export default defineConfig(({ mode }) => {
 })
 ```
 
-- [ ] **Step 5: scripts 与忽略项**
+- [x] **Step 5: scripts 与忽略项**
 
 `package.json` 的 `scripts` 里加三条（现有 `build` 保持不带 mode 参数，产物仍是 `dist/`）：
 
@@ -503,7 +503,7 @@ export default defineConfig(({ mode }) => {
 dist-demo
 ```
 
-- [ ] **Step 6: 验证两条链互不干扰**
+- [x] **Step 6: 验证两条链互不干扰**
 
 Run: `npm run build`
 Expected: 产出 `dist/`，无 TS 报错（此时 `DemoApp.vue` 还不存在，所以 Step 6 只验主链；若嫌空转，可先建一个只渲染 `<div>demo</div>` 的 `src/DemoApp.vue` 占位再跑 `npm run build:demo` 验演示链，Task 4 再补真视图）。
@@ -511,7 +511,7 @@ Expected: 产出 `dist/`，无 TS 报错（此时 `DemoApp.vue` 还不存在，�
 Run: `npm run build:demo`
 Expected: 产出 `dist-demo/index.html`，且 `dist-demo/` 里没有任何 `api/coach` 调用（`grep -rl "api/coach" dist-demo || echo clean` → `clean`）。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add demo.html src/demo-main.ts src/data/demo-store.ts vite.config.ts package.json .gitignore
@@ -530,7 +530,7 @@ git commit -m "feat: 演示产物独立入口，构建层隔离私有数据"
 
 **Consumes:** `demoCards`（Task 3）、`Blocks`/`MermaidBlock`（既有组件，Task 1 后不再引私有数据）、`inline`（`src/data/types`）
 
-- [ ] **Step 1: 写 `src/DemoApp.vue`**
+- [x] **Step 1: 写 `src/DemoApp.vue`**
 
 ```vue
 <script setup lang="ts">
@@ -664,12 +664,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </template>
 ```
 
-- [ ] **Step 2: 类型与构建过**
+- [x] **Step 2: 类型与构建过**
 
 Run: `npm run build:demo && npm run check:demo`
 Expected: 构建无 TS 报错；`[check-demo] 数据层通过：演示卡 1/1`。
 
-- [ ] **Step 3: 真机看效果（运行时验证，不能只看构建）**
+- [x] **Step 3: 真机看效果（运行时验证，不能只看构建）**
 
 Run: `npm run preview`（默认服务 `dist/`，验主站）与 `npx vite preview --mode demo`（服务 `dist-demo/`，地址 `http://localhost:4173/demo.html`；若本机 vite 只绑 IPv6，用 `http://[::1]:4173/demo.html`）。
 Expected:
@@ -679,7 +679,7 @@ Expected:
 4. 主站 `http://localhost:4173` 侧栏仍是完整 6 项，各页与改动前一致。
 两张截图（演示页 + 主站页）留作验收证据。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/DemoApp.vue
@@ -697,7 +697,7 @@ git commit -m "feat: 面试演示全屏讲解视图"
 - Modify: `scripts/publish-web.sh`
 - Modify: `README.md`
 
-- [ ] **Step 1: 在 `scripts/check-demo.mjs` 末尾的 `if (fails.length)` 之前插入 `--dist` 分支**
+- [x] **Step 1: 在 `scripts/check-demo.mjs` 末尾的 `if (fails.length)` 之前插入 `--dist` 分支**
 
 思路：指纹不是我手写的黑名单，而是从全量 `generated.json` 现算的「私有内容里独有的字符串」，然后到 `dist-demo` 的产物文本里逐个搜。任何一条命中就说明包串了。
 
@@ -762,17 +762,17 @@ if (process.argv.includes('--dist')) {
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 ```
 
-- [ ] **Step 2: 跑产物层自检**
+- [x] **Step 2: 跑产物层自检**
 
 Run: `npm run build:demo && node scripts/check-demo.mjs --dist`
 Expected: 末行 `[check-demo] 产物层扫描 N 个文件、M 条指纹` + `[check-demo] 数据层通过：演示卡 1/1`，退出码 0，无 `[指纹命中]`。
 
-- [ ] **Step 3: 验 gate 真会拦（负例，必须做一次）**
+- [x] **Step 3: 验 gate 真会拦（负例，必须做一次）**
 
 临时把 `vite.config.ts` 的 `rollupOptions.input` 改成恒为 `html('index.html')`（模拟「忘了用独立入口」），跑 `npm run build:demo && node scripts/check-demo.mjs --dist`。
 Expected: **FAIL** —— 出现 `[指纹命中] dist-demo 里出现私有内容：…`（全量站的 bundle 里有知识卡标题、管道公司名和内置视图标签，必然命中）。验完把 `input` 改回 Task 3 Step 4 写的 `html(demo ? 'demo.html' : 'index.html')`，再跑一次确认通过。
 
-- [ ] **Step 4: 上线链接入**
+- [x] **Step 4: 上线链接入**
 
 `scripts/publish-web.sh` 里两处改动。
 
@@ -827,7 +827,7 @@ if [[ "$SKIP_BUILD" == 0 ]]; then
 fi
 ```
 
-- [ ] **Step 5: 干跑上线脚本（不外推到服务器）**
+- [x] **Step 5: 干跑上线脚本（不外推到服务器）**
 
 Run: `bash -n scripts/publish-web.sh && DEMO_ONLY 分支用 SKIP_BUILD=1 试算` —— 具体执行：
 
@@ -838,7 +838,7 @@ node scripts/check-demo.mjs && node scripts/check-demo.mjs --dist
 Expected: 语法检查无输出；两条自检均退出码 0。
 **不要**在这一步真跑 `publish-web.sh`（它会 rsync 到 smzs-server 并可能重启服务）；上线动作等用户明确放行。
 
-- [ ] **Step 6: README 补一节**
+- [x] **Step 6: README 补一节**
 
 `README.md` 里加一节，位置放在现有「怎么用」类章节之后：
 
@@ -855,7 +855,7 @@ Expected: 语法检查无输出；两条自检均退出码 0。
   `npm run check:demo`（加 `--dist` 扫产物）会拿全量数据现算指纹去演示包里搜，命中即失败。
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/check-demo.mjs scripts/publish-web.sh README.md
@@ -873,6 +873,26 @@ git commit -m "feat: 演示产物指纹自检并接入上线链"
 **3. 类型一致性**：`DemoCard` 字段（Task 2 `toDemoCard` 产出 ↔ Task 3 `demo-store.ts` 声明 ↔ Task 4 模板取值）三处一致，逐一核过：`id/title/oneLine/type/period/role/scale/demoLink/impact/impactHead/diagrams/chunks`。`diagrams[].id` 形如 `d1..dN`（Task 2 断言 4 与 `toDemoCard` 的 `d${length+1}` 对齐）。`EvidenceCard` 新增的 `demo/demoHidden/demoLink` 在 Task 2 断言里被显式列为「不得出现在演示包」的内部字段，同时 `demo`/`demoHidden` 由 Task 5 的指纹逻辑消费。
 
 ## 需要你拍板的两件事（不属于本计划，实现前定即可）
-
 1. **演示包怎么送达面试官。** 三种，成本递增：① 不部署，面试时本机 `npm run dev:demo` 共享屏幕（零新攻击面，本计划 Task 1-5 已够用）；② 推 `demo.buildhub.cn` 子域名（需签证书 + 一份新 nginx server 块，Task 5 的 `--demo` 分支已按这个目录约定写好）；③ 给全量站也加 basic auth。我建议 ①，等真的需要「先发链接再面试」再上 ②。
 2. **现网 `career.buildhub.cn` 带全量私有数据且无鉴权**（[server/nginx/career.buildhub.cn.conf](file:///Users/ethan/workspace/code/one-person-hub/career-hub/server/nginx/career.buildhub.cn.conf) 的注释明确写了「不设 basic auth，靠域名不为人知」）。本计划不动它。但只要你会把这个域名发给任何第三方，它就和演示模式的隔离目标冲突——要么只发 `demo.` 那个，要么给它加鉴权。要不要我另开一个小任务处理，你说。
+
+## 执行记录（2026-10-27 跑完 Task 1-5）
+
+七个 commit：`d065c28` 计划 → `0b4d207` Task 1 → `9dfa38f` Task 2 → `9379db8` Task 3 → `8f3102a` Task 4 → `8cf8cc2` Task 5。
+
+三处与计划不同、值得记下来的：
+
+1. **Task 5 Step 1 的代码在落地时被我自己改错了。** 计划写的是 `check(!bundle.includes(probe), …)`，我为了少算一次 `replace` 把产物文本预存成 `squeezed` 变量，顺手漏掉了那个 `!`——于是这条断言反了：干净的包会被判「隐藏段正文残留」，真泄漏了反而放过。跑正例（临时卡 + `check --dist`）时它直接报错才暴露。教训是 `check(ok, msg)` 的约定是「传真话」，凡是把 `!` 挪来挪去的重构都要重跑一次正例。
+2. **最终 `演示卡 0/0` 不是 bug**：`content.private/.hidden` 把三张示例卡全剔掉了，所以真实部署里一张卡都没发布——发布开关按预期工作。因此 Task 5 的正负例都改在 `content.private/项目成果/` 下临时造一张 `EX-999` 自检卡来跑（验完删除），指纹层扫到 97 个文件、48 条真实私有指纹（含四个真公司名）。
+3. **产物入口没改名。** `rollupOptions.input` 给对象形式并不会把 `demo.html` 输出成 `index.html`（rolldown 版 vite 实测），所以产物里就是 `demo.html`；要挂子域名根路径，在 vhost 里给 `/` 兜底到 `/demo.html`。
+
+负例验证结果（都是先跑通正例、再故意打破、再复原）：
+
+| 打破的东西 | 期望 | 实测 |
+|------|------|------|
+| `rollupOptions.input` 恒为 `index.html` | 拦下 | `[指纹命中]` 报出硕橙科技 / 金旸集团 / 灵知科技 / 三条管道下一步 / 岗位与面试 + `[路径泄漏] content.private` + `[接口泄漏] /api/coach`，exit 1 |
+| `toDemoCard` 不删隐藏段 | 拦下 | `[段未删]` 与 `[隐藏段正文残留]` 同时命中，exit 1 |
+| 卡改 `演示: 否` | 出包 0 张 | 实测 0 张（Task 2 那轮验的，证明开关真在生效而不是恒发布） |
+| 去掉 `演示隐藏` 行 | 私密段回来 | 实测该段连同它的图一起进包（同上，反向证明删段开关真在生效） |
+
+`--demo` 分支用 `/tmp/fakebin` 里的假 `rsync`/`ssh` 干跑过一遍，确认它跳过主站构建、先自检再推、推完 `exit 0` 不碰 coach 代理；**没有向服务器发起任何真实上线**。全量站 `career.buildhub.cn` 本次未动。
