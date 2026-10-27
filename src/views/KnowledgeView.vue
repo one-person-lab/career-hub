@@ -4,7 +4,8 @@ import { PhGraph, PhImage, PhArrowClockwise, PhBrain, PhCaretRight } from '@phos
 import {
   knowledge,
   knowledgeByDomain,
-  dueForReview,
+  staleReview,
+  STALE_REVIEW_DAYS,
   levelDistribution,
   pipeline,
   inline,
@@ -12,7 +13,6 @@ import {
 } from '../data/store'
 import Blocks from '../components/Blocks.vue'
 import MermaidBlock from '../components/MermaidBlock.vue'
-import GuidePanel from '../components/GuidePanel.vue'
 
 /**
  * 知识与薄弱项：左目录 / 中正文 / 右关联。
@@ -21,11 +21,9 @@ import GuidePanel from '../components/GuidePanel.vue'
  */
 defineEmits<{ (e: 'go', id: string): void }>()
 
-const STALE_REVIEW_DAYS = 21
-
 const domains = computed(() => knowledgeByDomain())
 const dist = computed(() => levelDistribution())
-const dueList = computed(() => dueForReview().filter((k) => (k.reviewAge ?? 9999) > STALE_REVIEW_DAYS))
+const dueList = computed(() => staleReview())
 
 /** 展开的目录 */
 const open = ref<string[]>([])
@@ -73,8 +71,8 @@ function pickNextDue() {
 const jobsUsing = computed(() =>
   active.value ? pipeline.filter((p) => p.knowledgeIds.includes(active.value!.id)) : [],
 )
-const missingDiagram = computed(() => knowledge.filter((k) => k.diagrams.length === 0).map((k) => k.id))
-const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).map((k) => k.id))
+const missingDiagram = computed(() => knowledge.filter((k) => k.diagrams.length === 0).map((k) => k.title))
+const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).map((k) => k.title))
 </script>
 
 <template>
@@ -102,14 +100,9 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
       <div class="panel !p-0">
         <div class="group-head border-b border-line">
           <PhGraph :size="12" weight="bold" />
-          {{ knowledge.length }} 张卡 · {{ domains.length }} 个领域
+          知识目录
         </div>
         <div class="max-h-[calc(100vh-250px)] overflow-y-auto p-1.5">
-          <p v-if="!knowledge.length" class="px-2 py-4 text-[11px] leading-relaxed text-ink-3">
-            还没有知识卡。从 <span class="font-mono text-ink-2">content/10-Areas/知识点/_模板.md</span> 复制一份，
-            改名 <span class="font-mono text-ink-2">K-001-知识点名.md</span> 即可。
-          </p>
-
           <template v-for="g in domains" :key="g.domain">
             <button class="row py-1.5 text-[12px] font-semibold text-ink-2 hover:text-ink" @click="toggleDir(g.domain)">
               <PhCaretRight
@@ -140,7 +133,6 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
     <main v-if="active" class="min-w-0 flex-1 flex flex-col gap-3">
       <section class="panel">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="chip chip-solid font-mono">{{ active.id }}</span>
           <span v-if="active.level" class="chip"><span class="dot" :class="LEVEL_TONE[active.level]" />{{ active.level }}</span>
           <span class="chip">
             <PhArrowClockwise :size="10" weight="bold" />
@@ -207,7 +199,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
         <div v-if="showRest" class="flex flex-col gap-4 p-3.5">
           <section v-for="(ch, ci) in restChunks(active)" :key="ci">
             <h4 class="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-3">{{ ch.name }}</h4>
-            <Blocks :blocks="ch.blocks" :mid-prefix="`kn-${active.id}-${ci}`" compact />
+            <Blocks :blocks="ch.blocks" :mid-prefix="`kn-${active.id}-${ci}`" size="sm" />
           </section>
           <p v-if="!restChunks(active).length" class="text-[12px] text-ink-3">这张卡的正文都已经在上面了。</p>
         </div>
@@ -215,11 +207,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
     </main>
 
     <main v-else class="min-w-0 flex-1">
-      <div class="panel text-[13px] leading-relaxed text-ink-2">
-        面试时的问题不是「你懂不懂」，是「你在 5 秒内能不能调出来」。所以每张卡按这个顺序组织：
-        <span class="text-ink">trade-off → 必须记住的数字 → 追问链 → 项目锚点</span>，
-        外加一张图作为第二条回忆通路。
-      </div>
+      <div class="panel text-[13px] leading-relaxed text-ink-2">还没有知识卡。</div>
     </main>
 
     <!-- 右：关联与状态 -->
@@ -228,7 +216,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
         <div class="group-head border-b border-line">面试追问链</div>
         <ol class="flex flex-col gap-2 p-3">
           <p v-if="!active.questions.length" class="text-[12px] leading-relaxed text-ink-3">
-            没有追问链 —— 这张卡在面试里帮不上忙。写下「面试官会接着问什么」。
+            还没有追问链。
           </p>
           <li v-for="(q, i) in active.questions" :key="i" class="flex gap-2 text-[12px] leading-relaxed text-ink-2">
             <span class="shrink-0 font-mono text-[10px] text-ink-3">{{ i + 1 }}</span>
@@ -240,7 +228,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
       <section class="panel !p-0">
         <div class="group-head border-b border-line">我的项目锚点</div>
         <ul class="flex flex-col gap-1.5 p-3">
-          <p v-if="!active.anchors.length" class="text-[12px] leading-relaxed text-ink-3">没有锚点 = 讲不出「我在哪用过它」。</p>
+          <p v-if="!active.anchors.length" class="text-[12px] leading-relaxed text-ink-3">还没有项目锚点。</p>
           <li v-for="(a, i) in active.anchors" :key="i" class="flex gap-2 text-[12px] leading-relaxed text-ink-2">
             <span class="mt-[7px] h-1 w-1 shrink-0 rounded-full b-green" />
             <span class="min-w-0" v-html="inline(a)" />
@@ -252,7 +240,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
         <div class="group-head border-b border-line">哪些岗位在考它</div>
         <div class="p-1.5">
           <p v-if="!jobsUsing.length" class="px-2 py-3 text-[12px] leading-relaxed text-ink-3">
-            暂无岗位关联。想让它进面试，去 <span class="font-mono text-ink-2">岗位管道.md</span> 的「关联知识」列写上 {{ active.id }}。
+            还没有关联岗位。
           </p>
           <div v-for="p in jobsUsing" :key="p.key" class="row cursor-default py-1.5 text-[12px]">
             <span class="dot shrink-0" :class="p.nextIn !== null && p.nextIn >= 0 ? 'b-amber' : 'b-gray'" />
@@ -270,7 +258,7 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
         </div>
         <div class="max-h-[260px] overflow-y-auto p-1.5">
           <p v-if="!dueList.length" class="px-2 py-3 text-[12px] text-ink-3">
-            {{ STALE_REVIEW_DAYS }} 天内都碰过。间隔重复比一次性背完有效得多。
+            近 {{ STALE_REVIEW_DAYS }} 天都复习过。
           </p>
           <button
             v-for="k in dueList"
@@ -279,7 +267,6 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
             :class="k.id === selected ? 'bg-raised text-ink' : 'text-ink-2'"
             @click="selected = k.id"
           >
-            <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ k.id }}</span>
             <span class="min-w-0 flex-1 truncate">{{ k.title }}</span>
             <span class="shrink-0 font-mono text-[10px]" :class="k.reviewAge === null ? 'text-red' : 'text-amber'">
               {{ k.reviewAge === null ? '从未' : `${k.reviewAge}天` }}
@@ -295,14 +282,10 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
         <span class="dot mt-1.5 shrink-0 b-amber" />
         <p class="text-[12px] leading-relaxed text-ink-2">
           待补齐 ——
-          <template v-if="missingDiagram.length">缺图：{{ missingDiagram.slice(0, 6).join(' / ') }}；</template>
-          <template v-if="noNumber.length">没有数字：{{ noNumber.slice(0, 6).join(' / ') }}。</template>
+          <template v-if="missingDiagram.length">缺图：{{ missingDiagram.slice(0, 4).join('、') }}；</template>
+          <template v-if="noNumber.length">没有数字：{{ noNumber.slice(0, 4).join('、') }}。</template>
         </p>
       </div>
     </aside>
-  </div>
-
-  <div v-if="!knowledge.length" class="mx-auto mt-3 max-w-[1280px]">
-    <GuidePanel section-id="knowledge" />
   </div>
 </template>

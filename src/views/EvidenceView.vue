@@ -4,7 +4,6 @@ import { PhTrophy, PhImage, PhBuildings } from '@phosphor-icons/vue'
 import { evidence, pipeline, inline, type EvidenceCard, type PipelineRow } from '../data/store'
 import Blocks from '../components/Blocks.vue'
 import MermaidBlock from '../components/MermaidBlock.vue'
-import GuidePanel from '../components/GuidePanel.vue'
 
 /**
  * 项目与经历：唯一事实源。
@@ -41,8 +40,8 @@ const reuseTone = (r: string): string => {
   return 'b-gray'
 }
 
-const missingDiagram = computed(() => evidence.filter((c) => c.diagrams.length === 0).map((c) => c.id))
-const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 0).map((c) => c.id))
+const missingDiagram = computed(() => evidence.filter((c) => c.diagrams.length === 0).map((c) => c.title))
+const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 0).map((c) => c.title))
 </script>
 
 <template>
@@ -55,17 +54,13 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
       <span class="dot mt-1.5 shrink-0 b-amber" />
       <p class="text-[12px] leading-relaxed text-ink-2">
         待补齐 ——
-        <template v-if="missingImpact.length">缺影响数字：{{ missingImpact.join(' / ') }}；</template>
-        <template v-if="missingDiagram.length">缺图：{{ missingDiagram.join(' / ') }}。</template>
-        没有数字和图的成果，讲出来是没有重量的。
+        <template v-if="missingImpact.length">缺影响数字：{{ missingImpact.slice(0, 4).join('、') }}；</template>
+        <template v-if="missingDiagram.length">缺图：{{ missingDiagram.slice(0, 4).join('、') }}。</template>
       </p>
     </div>
 
     <div v-if="!evidence.length" class="panel">
-      <p class="text-[13px] leading-relaxed text-ink-2">
-        还没有成果卡。从 <span class="font-mono text-ink">content/项目成果/_模板.md</span> 复制一份，
-        改名为 <span class="font-mono text-ink">EX-001-项目名.md</span> 就能开始写。
-      </p>
+      <p class="text-[13px] leading-relaxed text-ink-2">还没有成果卡。</p>
     </div>
 
     <div v-else class="flex min-h-0 gap-3">
@@ -93,7 +88,7 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
         <div class="panel !p-0">
           <div class="group-head border-b border-line">
             <PhTrophy :size="12" weight="bold" />
-            {{ list.length }} 条
+            成果
           </div>
           <div class="max-h-[calc(100vh-260px)] overflow-y-auto p-1.5">
             <button
@@ -103,7 +98,6 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
               :class="c.id === selected ? 'bg-raised text-ink' : 'text-ink-2'"
               @click="selected = c.id"
             >
-              <span class="w-[52px] shrink-0 font-mono text-[10px] text-ink-3">{{ c.id }}</span>
               <span class="min-w-0 flex-1 truncate">{{ c.title }}</span>
               <span v-if="usedBy(c.id).length" class="chip shrink-0 !px-1.5">
                 <PhBuildings :size="9" weight="bold" />
@@ -118,9 +112,8 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
       <div v-if="active" class="min-w-0 flex-1 flex flex-col gap-3">
         <section class="panel">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="chip chip-solid font-mono">{{ active.id }}</span>
             <span v-if="active.type" class="chip">{{ active.type }}</span>
-            <span class="ml-auto text-[11px] text-ink-3">更新 {{ active.updated || '—' }}</span>
+            <span v-if="active.updated" class="ml-auto text-[11px] text-ink-3">更新 {{ active.updated }}</span>
           </div>
 
           <h2 class="mt-2 text-[18px] font-semibold leading-tight text-ink">{{ active.title }}</h2>
@@ -130,7 +123,6 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
             <span v-if="active.period">{{ active.period }}</span>
             <span v-if="active.role">角色：{{ active.role }}</span>
             <span v-if="active.scale">规模：{{ active.scale }}</span>
-            <span class="font-mono">{{ active.file }}</span>
           </div>
         </section>
 
@@ -186,7 +178,7 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
               </div>
             </div>
             <p v-if="!usedBy(active.id).length && !active.reuse.length" class="text-[12px] text-ink-3">
-              还没挂到任何岗位，也没标可复用场景 —— 一条没人用的成果，等于没写。
+              还没有关联岗位，也没标可复用场景。
             </p>
           </div>
         </section>
@@ -204,12 +196,10 @@ const missingImpact = computed(() => evidence.filter((c) => c.impact.length === 
         <section v-for="(ch, ci) in detailChunks(active)" :key="ci" class="panel !p-0">
           <div class="group-head border-b border-line">{{ ch.name }}</div>
           <div class="px-3.5 py-3">
-            <Blocks :blocks="ch.blocks" :mid-prefix="`ev-${active.id}-${ci}`" compact />
+            <Blocks :blocks="ch.blocks" :mid-prefix="`ev-${active.id}-${ci}`" size="sm" />
           </div>
         </section>
       </div>
     </div>
-
-    <GuidePanel v-if="evidence.length" section-id="evidence" />
   </div>
 </template>

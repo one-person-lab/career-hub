@@ -127,15 +127,6 @@ export interface Section {
   docs: SectionDoc[]
 }
 
-/* ==================== 旧库盘点 ==================== */
-
-export interface LegacyStat {
-  root: string
-  mdTotal: number
-  htmlTotal: number
-  byDir: { dir: string; count: number }[]
-}
-
 /* ==================== 导出 ==================== */
 
 const r = raw as Record<string, unknown>
@@ -143,8 +134,6 @@ export const sections: Section[] = r.sections as Section[]
 export const evidence: EvidenceCard[] = r.evidence as EvidenceCard[]
 export const knowledge: KnowledgeCard[] = r.knowledge as KnowledgeCard[]
 export const pipeline: PipelineRow[] = (r.pipeline as PipelineRow[]) ?? []
-export const legacy: LegacyStat | null = (r.legacy as LegacyStat) ?? null
-export const generatedAt: string = r.generatedAt as string
 
 /* ==================== 派生指标 ==================== */
 
@@ -188,6 +177,13 @@ export const evidenceByType = (): { type: string; cards: EvidenceCard[] }[] => {
 /** 需要复习的知识点：越久没看越靠前；没记过复习日期的排最前 */
 export const dueForReview = (): KnowledgeCard[] =>
   [...knowledge].sort((a, b) => (b.reviewAge ?? 9999) - (a.reviewAge ?? 9999))
+
+/** 超过这个天数没碰，才算「到期」 */
+export const STALE_REVIEW_DAYS = 21
+
+/** 真正到期的复习队列 —— 全站唯一口径，导航徽标与各视图都用它 */
+export const staleReview = (): KnowledgeCard[] =>
+  dueForReview().filter((k) => (k.reviewAge ?? 9999) > STALE_REVIEW_DAYS)
 
 /** 掌握度分布 */
 export const levelDistribution = (): { level: string; score: number; count: number }[] =>

@@ -9,7 +9,7 @@ import CoachView from './views/CoachView.vue'
 import EvidenceView from './views/EvidenceView.vue'
 import KnowledgeView from './views/KnowledgeView.vue'
 import DocView from './views/DocView.vue'
-import { sectionById, pipeline, knowledge, dueForReview, isLive } from './data/store'
+import { sectionById } from './data/store'
 
 const current = ref('overview')
 const palette = ref(false)
@@ -30,24 +30,6 @@ const isDocView = computed(() => activeView.value === DocView)
 const extraProps = computed(() => (isDocView.value ? { id: current.value } : {}))
 
 const section = computed(() => sectionById(current.value))
-
-/** 顶栏副标题：一句话说清这一页现在有多少活 */
-const hint = computed(() => {
-  switch (current.value) {
-    case 'overview':
-      return `${pipeline.filter(isLive).length} 个岗位在推进 · ${dueForReview().filter((k) => (k.reviewAge ?? 9999) > 21).length} 个知识点待复习`
-    case 'pipeline':
-      return `${pipeline.length} 条投递记录 · 来自 content/00-Projects/岗位管道.md`
-    case 'coach':
-      return '对着具体岗位练，练完留下分数和短板'
-    case 'evidence':
-      return `${pipeline.reduce((s, p) => s + p.evidenceIds.length, 0)} 次被岗位引用`
-    case 'knowledge':
-      return `${knowledge.length} 张卡 · ${dueForReview().length} 张到期`
-    default:
-      return section.value?.group || ''
-  }
-})
 
 const QUICK = ['overview', 'pipeline', 'coach', 'evidence', 'knowledge']
 
@@ -86,7 +68,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div class="flex min-w-0 flex-1 flex-col">
       <header class="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <h1 class="shrink-0 text-[13px] font-semibold text-ink">{{ section?.label || '职业工作台' }}</h1>
-        <span class="min-w-0 truncate text-[11px] text-ink-3">{{ hint }}</span>
 
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <button class="btn btn-ghost" @click="palette = true">

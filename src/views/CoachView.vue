@@ -312,12 +312,12 @@ function saveHistory(list: Session[]): void {
         <div class="group-head border-b border-line">训练记录</div>
         <div class="max-h-[240px] overflow-y-auto p-1.5">
           <p v-if="!history.length" class="px-2 py-4 text-[11px] leading-relaxed text-ink-3">
-            还没有记录。练完点「结束」，这里会留下轮次与平均分（存在本机浏览器）。
+            还没有训练记录。
           </p>
           <div v-for="s in history" :key="s.id" class="row cursor-default text-[12px]">
             <span class="min-w-0 flex-1 truncate text-ink-2">{{ s.job }}</span>
             <span class="shrink-0 font-mono text-[10px] text-ink-3">{{ s.rounds }} 轮</span>
-            <span class="w-[26px] shrink-0 text-right font-mono text-[11px]" :class="scoreOf(s.score || 0)">{{ s.score ?? '—' }}</span>
+            <span class="w-[26px] shrink-0 text-right font-mono text-[11px]" :class="scoreOf(s.score || 0)">{{ s.score ?? '' }}</span>
           </div>
         </div>
       </section>
@@ -331,7 +331,7 @@ function saveHistory(list: Session[]): void {
             {{ job ? `${job.company} · ${job.role}` : '通用训练' }}
           </p>
           <p class="mt-0.5 text-[11px] text-ink-2">
-            {{ job ? `${job.stage} · 下一步：${job.action || '未填'}` : '管道为空，练的是通用题' }}
+            {{ job ? (job.action ? `${job.stage} · 下一步：${job.action}` : job.stage) : '管道为空，练的是通用题' }}
           </p>
         </div>
         <span v-if="question" class="chip shrink-0">
@@ -386,7 +386,7 @@ function saveHistory(list: Session[]): void {
 
       <section v-else-if="!finished" class="panel flex items-center gap-2 text-[13px] text-ink-2">
         <PhBrain :size="15" weight="bold" class="text-ink-3" />
-        题会从「这个岗位关联的知识卡追问链」里抽，追问由教练接着往下挖。点「开始」出题。
+        点「开始」出题。
       </section>
 
       <section v-else class="panel flex items-center gap-3">
@@ -395,7 +395,6 @@ function saveHistory(list: Session[]): void {
           <p class="text-[13px] font-semibold text-ink">
             这一场练完了 · {{ turns.length }} 轮{{ avgScore !== null ? ` · 平均 ${avgScore} 分` : '' }}
           </p>
-          <p class="mt-0.5 text-[11px] text-ink-2">被问倒的题如果答不上来，回知识卡补一条 trade-off 或数字，别只记「要复习」。</p>
         </div>
         <button class="btn" @click="start"><PhPlay :size="12" weight="bold" />再来一场</button>
       </section>
@@ -444,7 +443,7 @@ function saveHistory(list: Session[]): void {
         </div>
         <div class="p-1.5">
           <p v-if="!relatedEvidence.length" class="px-2 py-3 text-[11px] leading-relaxed text-ink-3">
-            这个岗位还没挂成果卡。在管道表的「关联成果」列写 EX 编号。
+            这个岗位还没挂成果卡。
           </p>
           <button v-for="e in relatedEvidence" :key="e.id" class="row py-2 text-[12px]" @click="emit('go', 'evidence')">
             <div class="min-w-0 flex-1">

@@ -4,12 +4,10 @@ import { PhKanban, PhListBullets, PhArrowRight, PhTrophy, PhGraph, PhCalendar, P
 import {
   pipeline,
   pipelineByStage,
-  PIPELINE_STAGES,
   stageTone,
   readinessTone,
   evidenceById,
   knowledgeById,
-  isLive,
   type PipelineRow,
 } from '../data/store'
 
@@ -37,24 +35,17 @@ watch(
 
 const active = computed(() => pipeline.find((p) => p.key === selected.value))
 const groups = computed(() => pipelineByStage())
-const liveCount = computed(() => pipeline.filter(isLive).length)
+/** 一张真实评估都没有时，整列不出现，而不是每行挂一个「—」 */
+const hasReadiness = computed(() => pipeline.some((p) => p.readinessScore > 0))
 
 const dayLabel = (p: PipelineRow): string =>
   p.nextIn === null ? '' : p.nextIn < 0 ? `已过 ${Math.abs(p.nextIn)} 天` : p.nextIn === 0 ? '今天' : `${p.nextIn} 天后`
-
-const timeline = (stage: string): string[] => {
-  const i = PIPELINE_STAGES.indexOf(stage)
-  return PIPELINE_STAGES.slice(0, Math.max(0, i)).filter((s) => s !== '暂停' && s !== '已结束')
-}
 </script>
 
 <template>
   <div class="mx-auto flex max-w-[1240px] flex-col gap-3">
     <div v-if="!pipeline.length" class="panel">
-      <p class="text-[13px] text-ink-2">
-        管道是空的。往 <code class="font-mono text-ink">content/00-Projects/岗位管道.md</code> 的「## 管道」表格里加一行，
-        <code class="font-mono text-ink">npm run gen:data</code> 后即可显示。
-      </p>
+      <p class="text-[13px] text-ink-2">还没有岗位记录。</p>
     </div>
 
     <template v-else>
@@ -71,27 +62,26 @@ const timeline = (stage: string): string[] => {
           </button>
         </div>
 
-        <div class="flex flex-wrap items-center gap-1">
+        <div class="ml-1 flex flex-wrap items-center gap-3 text-[12px]">
           <button
-            class="chip transition-colors hover:bg-hover hover:text-ink"
-            :class="!stageFilter ? 'chip-solid text-ink' : ''"
+            class="transition-colors"
+            :class="!stageFilter ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'"
             @click="stageFilter = ''"
           >
-            全部 {{ pipeline.length }}
+            全部
           </button>
           <button
             v-for="g in groups"
             :key="g.stage"
-            class="chip transition-colors hover:bg-hover hover:text-ink"
-            :class="stageFilter === g.stage ? 'chip-solid text-ink' : ''"
+            class="flex items-center transition-colors"
+            :class="stageFilter === g.stage ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'"
             @click="stageFilter = g.stage"
           >
-            <span class="dot" :class="stageTone(g.stage)" />
-            {{ g.stage }} {{ g.rows.length }}
+            <span class="dot mr-1.5" :class="stageTone(g.stage)" />
+            {{ g.stage }}
+            <span class="ml-1 font-mono text-[10px] text-ink-3">{{ g.rows.length }}</span>
           </button>
         </div>
-
-        <span class="ml-auto text-[11px] text-ink-3">{{ liveCount }} 个仍在推进</span>
       </div>
 
       <div class="flex min-h-0 gap-3">
@@ -106,7 +96,7 @@ const timeline = (stage: string): string[] => {
                   <th class="border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">岗位</th>
                   <th class="w-[96px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">阶段</th>
                   <th class="w-[104px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">下一轮</th>
-                  <th class="w-[68px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">准备度</th>
+                  <th v-if="hasReadiness" class="w-[68px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">准备度</th>
                   <th class="border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">下一步</th>
                 </tr>
               </thead>
@@ -131,12 +121,11 @@ const timeline = (stage: string): string[] => {
                         {{ dayLabel(p) }}
                       </div>
                     </template>
-                    <span v-else class="text-[11px] text-ink-3">—</span>
                   </td>
-                  <td class="px-3 py-2">
-                    <span :class="readinessTone(p.readinessScore)">{{ p.readiness || '—' }}</span>
+                  <td v-if="hasReadiness" class="px-3 py-2">
+                    <span :class="readinessTone(p.readinessScore)">{{ p.readiness }}</span>
                   </td>
-                  <td class="max-w-[280px] truncate px-3 py-2 text-ink-2" :title="p.action">{{ p.action || '—' }}</td>
+                  <td class="max-w-[280px] truncate px-3 py-2 text-ink-2" :title="p.action">{{ p.action }}</td>
                 </tr>
               </tbody>
             </table>
@@ -183,21 +172,9 @@ const timeline = (stage: string): string[] => {
             </div>
           </div>
 
-          <!-- 阶段进度 -->
-          <div class="border-b border-line px-3.5 py-3">
-            <p class="mb-2 text-[11px] uppercase tracking-wide text-ink-3">走到哪了</p>
-            <div class="flex flex-wrap items-center gap-1">
-              <template v-for="(s, i) in timeline(active.stage)" :key="s">
-                <span class="chip">{{ s }}</span>
-                <span v-if="i < timeline(active.stage).length - 1" class="text-ink-3">›</span>
-              </template>
-              <span class="chip chip-solid text-ink">{{ active.stage }}</span>
-            </div>
-          </div>
-
           <div class="border-b border-line px-3.5 py-3">
             <p class="mb-1 text-[11px] uppercase tracking-wide text-ink-3">下一步</p>
-            <p class="text-[13px] leading-relaxed text-ink">{{ active.action || '没写下个动作 —— 这一行等于卡住了' }}</p>
+            <p class="text-[13px] leading-relaxed text-ink">{{ active.action || '还没有下一步' }}</p>
           </div>
 
           <div v-if="active.evidenceIds.length" class="border-b border-line px-3.5 py-3">
@@ -206,7 +183,6 @@ const timeline = (stage: string): string[] => {
               关联成果
             </p>
             <button v-for="id in active.evidenceIds" :key="id" class="row py-1.5" @click="emit('go', 'evidence')">
-              <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ id }}</span>
               <span class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ evidenceById(id)?.title || '还没有这张卡' }}</span>
               <PhArrowRight v-if="!evidenceById(id)" :size="11" weight="bold" class="shrink-0 text-amber" />
             </button>
@@ -218,7 +194,6 @@ const timeline = (stage: string): string[] => {
               关联知识
             </p>
             <button v-for="id in active.knowledgeIds" :key="id" class="row py-1.5" @click="emit('go', 'knowledge')">
-              <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ id }}</span>
               <span class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ knowledgeById(id)?.title || '还没有这张卡' }}</span>
               <span v-if="knowledgeById(id)" class="chip shrink-0">{{ knowledgeById(id)?.level }}</span>
             </button>
@@ -230,9 +205,6 @@ const timeline = (stage: string): string[] => {
               训练这个岗位
             </button>
           </div>
-          <p class="px-3.5 pb-3 text-[10px] text-ink-3">
-            第 {{ active.row }} 行 · 改数据请回 <span class="font-mono text-ink-2">content/00-Projects/岗位管道.md</span>
-          </p>
         </aside>
       </div>
     </template>

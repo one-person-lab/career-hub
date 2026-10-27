@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { PhFlagBanner as PhBrand, PhMagicWand } from '@phosphor-icons/vue'
-import { sectionGroups, sectionIcon, evidence, knowledge, pipeline, dueForReview } from '../data/store'
+import { PhFlagBanner as PhBrand } from '@phosphor-icons/vue'
+import { sectionGroups, sectionIcon, evidence, pipeline, staleReview } from '../data/store'
 
 defineProps<{ current: string }>()
 defineEmits<{ (e: 'select', id: string): void }>()
@@ -24,10 +24,9 @@ const liveCount = computed(() => pipeline.filter((p) => p.stage !== '已结束' 
 
 /** 右侧数字：只放「现在还能推进的」，不放总量 */
 const badge = computed<Record<string, number>>(() => ({
-  overview: dueForReview().length > 0 ? dueForReview().length : 0,
   pipeline: liveCount.value,
-  evidence: evidence.length,
-  knowledge: knowledge.length,
+  evidence: evidence.filter((c) => c.impact.length === 0 || c.diagrams.length === 0).length,
+  knowledge: staleReview().length,
 }))
 </script>
 
@@ -61,12 +60,5 @@ const badge = computed<Record<string, number>>(() => ({
         </button>
       </template>
     </nav>
-
-    <div class="border-t border-line px-3 py-2.5">
-      <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-3">
-        <PhMagicWand :size="12" weight="regular" class="mt-0.5 shrink-0" />
-        <span>板块由 <code class="font-mono text-ink-2">content/</code> 目录推导，放 md 即可，不改代码。</span>
-      </p>
-    </div>
   </aside>
 </template>

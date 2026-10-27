@@ -12,17 +12,16 @@ import {
 import {
   pipeline,
   knowledge,
-  evidence,
   upcomingInterviews,
   overdueRounds,
   staleApplications,
   unreadyRows,
   weakKnowledge,
-  dueForReview,
+  staleReview,
+  STALE_REVIEW_DAYS,
   isLive,
   stageTone,
   readinessTone,
-  generatedAt,
   type PipelineRow,
 } from '../data/store'
 
@@ -33,21 +32,20 @@ const emit = defineEmits<{ (e: 'go', id: string): void }>()
  * 所以这里没有统计卡墙，只有排过序的行动行 —— 每行都能一键跳到能干活的那个页面。
  */
 
-const STALE_REVIEW_DAYS = 21
-
 const soonest = computed<PipelineRow | undefined>(() => upcomingInterviews(1)[0])
 const soon = computed(() => upcomingInterviews(5))
 const overdue = computed(() => overdueRounds())
 const silent = computed(() => staleApplications(7))
 const unready = computed(() => unreadyRows())
-const dueReview = computed(() => dueForReview().filter((k) => (k.reviewAge ?? 9999) > STALE_REVIEW_DAYS))
+const dueReview = computed(() => staleReview())
 const weak = computed(() => weakKnowledge(5))
 
 /** 今日三件事：按「离现场的远近」排序，越近越靠前 */
 const focus = computed(() => {
   const items: { key: string; tone: string; text: string; sub: string; go: string }[] = []
 
-  for (const p of soon.value.slice(0, 2)) {
+  // 最近一场的动作已在顶部大卡说过，这里只列其余的，避免同一句话出现两次
+  for (const p of soon.value.filter((x) => x.key !== soonest.value?.key).slice(0, 2)) {
     items.push({
       key: `s-${p.key}`,
       tone: stageTone(p.stage),
@@ -61,7 +59,7 @@ const focus = computed(() => {
       key: `u-${p.key}`,
       tone: 'b-red',
       text: `${p.company} 准备度只有「${p.readiness}」，先补证据再进去`,
-      sub: p.evidenceIds.length ? `已挂 ${p.evidenceIds.join(' / ')}` : '还没有关联任何成果卡',
+      sub: p.evidenceIds.length ? '已关联成果卡' : '还没有关联任何成果卡',
       go: 'pipeline',
     })
   }
@@ -102,7 +100,7 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
           <span class="chip ml-2"><span class="dot" :class="stageTone(soonest.stage)" />{{ soonest.stage }}</span>
         </p>
         <p class="mt-1 text-[12px] text-ink-2">
-          {{ soonest.nextRound }} 开始 · 距今 {{ soonest.nextIn }} 天 · 下一步：{{ soonest.action || '未填写' }}
+          {{ soonest.nextRound }} 开始 · 距今 {{ soonest.nextIn }} 天<template v-if="soonest.action"> · 下一步：{{ soonest.action }}</template>
           <span v-if="soonest.readiness" :class="readinessTone(soonest.readinessScore)" class="ml-2">
             准备度 {{ soonest.readiness }}
           </span>
@@ -111,11 +109,11 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
       <div v-else class="min-w-0 flex-1">
         <p class="text-[15px] font-semibold text-ink">眼下没有排定面试</p>
         <p class="mt-1 text-[12px] text-ink-2">
-          {{ liveTotal ? `${liveTotal} 个岗位在推进，但都没约时间 —— 该去管道里填「下一轮时间」` : '管道是空的，先去 content/00-Projects/岗位管道.md 加一行' }}
+          {{ liveTotal ? `${liveTotal} 个岗位在推进，但都没约时间` : '还没有岗位在推进' }}
         </p>
       </div>
       <button class="btn btn-primary shrink-0" @click="emit('go', soonest ? 'coach' : 'pipeline')">
-        {{ soonest ? '去训练这场' : '去填管道' }}
+        {{ soonest ? '去训练这场' : '去管道' }}
         <PhArrowRight :size="13" weight="bold" />
       </button>
     </section>
@@ -127,7 +125,7 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
         今日三件事
       </div>
       <div class="p-1.5">
-        <p v-if="!focus.length" class="px-3 py-6 text-center text-[12px] text-ink-3">没有卡住的行动 —— 说明管道和复习队列都是干净的。</p>
+        <p v-if="!focus.length" class="px-3 py-6 text-center text-[12px] text-ink-3">没有卡住的行动。</p>
         <button v-for="f in focus" :key="f.key" class="row" @click="emit('go', f.go)">
           <span class="dot shrink-0" :class="f.tone" />
           <span class="min-w-0 flex-1 truncate text-[13px] text-ink">{{ f.text }}</span>
@@ -143,11 +141,10 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
         <div class="group-head border-b border-line">
           <PhCalendar :size="13" weight="bold" />
           近期面试
-          <span v-if="overdue.length" class="chip !px-1.5 ml-auto text-red">{{ overdue.length }} 场未记录</span>
         </div>
         <div class="p-1.5">
           <p v-if="!soon.length && !overdue.length" class="px-3 py-6 text-center text-[12px] text-ink-3">
-            暂无排期。管道里填上「下一轮时间」就会出现在这里。
+            没有排期的面试。
           </p>
           <button
             v-for="p in [...overdue, ...soon]"
@@ -173,10 +170,9 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
         </div>
         <div class="p-1.5">
           <p v-if="!weak.length" class="px-3 py-6 text-center text-[12px] text-ink-3">
-            {{ knowledge.length ? '没有「生疏/理解」档的知识卡。' : '还没有知识卡，先去能力图谱建几张。' }}
+            {{ knowledge.length ? '没有薄弱项。' : '还没有知识卡。' }}
           </p>
           <button v-for="k in weak" :key="k.id" class="row" @click="emit('go', 'knowledge')">
-            <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ k.id }}</span>
             <span class="min-w-0 flex-1 truncate text-[13px] text-ink">{{ k.title }}</span>
             <span class="chip shrink-0">{{ k.level || '未标' }}</span>
             <span class="w-[58px] shrink-0 text-right font-mono text-[10px] text-ink-3">
@@ -198,7 +194,6 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
         <div class="max-h-[188px] overflow-y-auto p-1.5">
           <p v-if="!dueReview.length" class="px-3 py-6 text-center text-[12px] text-ink-3">没有到期的知识点。</p>
           <button v-for="k in dueReview.slice(0, 12)" :key="k.id" class="row" @click="emit('go', 'knowledge')">
-            <span class="w-[46px] shrink-0 font-mono text-[10px] text-ink-3">{{ k.id }}</span>
             <span class="min-w-0 flex-1 truncate text-[13px] text-ink">{{ k.title }}</span>
             <span class="shrink-0 font-mono text-[10px]" :class="k.reviewAge === null ? 'text-red' : 'text-amber'">
               {{ k.reviewAge === null ? '从未' : k.reviewAge + ' 天' }}
@@ -223,10 +218,5 @@ const liveTotal = computed(() => pipeline.filter(isLive).length)
         </div>
       </section>
     </div>
-
-    <p class="px-1 text-[11px] text-ink-3">
-      {{ evidence.length }} 张成果卡 · {{ knowledge.length }} 张知识卡 · {{ pipeline.length }} 条管道记录 ·
-      数据生成于 {{ generatedAt.slice(0, 16).replace('T', ' ') }}
-    </p>
   </div>
 </template>
