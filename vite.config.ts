@@ -71,10 +71,21 @@ function coachApi(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // .env 里的 COACH_* 不会自动进 process.env，这里手动搬一次
-  Object.assign(process.env, loadEnv(mode, path.dirname(fileURLToPath(import.meta.url)), ''))
+  const HERE = path.dirname(fileURLToPath(import.meta.url))
+  Object.assign(process.env, loadEnv(mode, HERE, ''))
+
+  // 演示产物：独立入口 + 独立目录。私有视图（管道 / 训练室 / 知识卡）不进依赖图，
+  // generated.json 也不进 —— 隔离发生在构建层，不靠前端隐藏。
+  const demo = mode === 'demo'
 
   return {
     plugins: [vue(), portfolioStatic(), coachApi()],
-    server: { port: 5175 },
+    server: { port: 5175, open: demo ? '/demo.html' : undefined },
+    build: {
+      outDir: demo ? 'dist-demo' : 'dist',
+      // 产物入口仍叫 demo.html（不是 index.html）：本机共享屏幕直接开它；
+      // 若要挂子域名根路径，在 vhost 里给 / 兜底到 /demo.html，不改构建
+      rollupOptions: { input: path.resolve(HERE, demo ? 'demo.html' : 'index.html') },
+    },
   }
 })
