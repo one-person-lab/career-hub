@@ -1,28 +1,37 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PhKanban, PhListBullets, PhArrowRight, PhTrophy, PhGraph, PhCalendar, PhLightning } from '@phosphor-icons/vue'
+import { PhArrowRight, PhCaretRight, PhLightning } from '@phosphor-icons/vue'
 import {
   pipeline,
-  pipelineByStage,
   stageTone,
-  readinessTone,
   evidenceById,
-  knowledgeById,
+  docsByHost,
+  questionsFor,
+  isLive,
+  inline,
+  materialsFor,
+  warRoomFor,
   type PipelineRow,
 } from '../data/store'
+import Blocks from '../components/Blocks.vue'
 
 const emit = defineEmits<{ (e: 'go', id: string): void }>()
 
 /**
- * 管道：一行一个「公司 × 岗位」，内容真身在 content/00-Projects/岗位管道.md 的表格里。
- * 这一页只做两件事——按阶段看清楚都卡在哪，以及点开某一行时把关联的成果和知识调出来。
+ * 面试场次：一场面试一页。
+ * 左边选场次，右边是这场面试要的东西 —— 公司做什么、岗位职责、我还没底的点、下一步。
  */
 
-const view = ref<'list' | 'board'>('list')
-const stageFilter = ref('')
+type Filter = 'all' | 'live' | 'done'
+const filter = ref<Filter>('all')
 const selected = ref<string>('')
 
-const rows = computed(() => (stageFilter.value ? pipeline.filter((p) => p.stage === stageFilter.value) : pipeline))
+const rows = computed(() => {
+  const base = filter.value === 'live' ? pipeline.filter(isLive) : filter.value === 'done' ? pipeline.filter((p) => !isLive(p)) : pipeline
+  // 有排期的按离现在最近在前，没排期的排后面
+  const due = (p: PipelineRow): number => (p.nextIn === null ? Number.POSITIVE_INFINITY : p.nextIn)
+  return [...base].sort((a, b) => due(a) - due(b))
+})
 
 /** 选中行兜底：默认停在最近一场面试上 */
 watch(
@@ -34,179 +43,221 @@ watch(
 )
 
 const active = computed(() => pipeline.find((p) => p.key === selected.value))
-const groups = computed(() => pipelineByStage())
-/** 一张真实评估都没有时，整列不出现，而不是每行挂一个「—」 */
-const hasReadiness = computed(() => pipeline.some((p) => p.readinessScore > 0))
+const brief = computed(() => active.value?.brief)
+const bank = computed(() => (active.value ? questionsFor(active.value.company) : []))
+const war = computed(() => {
+  const r = active.value ? warRoomFor(active.value.company) : undefined
+  return r && r.total > 0 ? r : undefined
+})
+const contextDocs = computed(() => docsByHost('prep-jobs'))
+/** 简报已经把公司资料摊开了，这里只留面试记录这类补充材料 */
+const noteDocs = computed(() => contextDocs.value.filter((d) => !brief.value || d.id !== 'companies'))
+const docId = computed(() =>
+  active.value?.companyDoc ? `companies::${active.value.companyDoc}` : '',
+)
+/** 岗位职责里点到什么技术，就把那个方向下我自己的材料递过来 */
+const materials = computed(() =>
+  brief.value ? materialsFor([...brief.value.what, ...brief.value.duties, ...brief.value.requirements]) : [],
+)
+
+const openReq = ref(false)
+watch(selected, () => (openReq.value = false))
+
+/** 缺口三档：没做过、做过相近的、资历超了会被问 */
+const GAP_TONE: Record<string, string> = {
+  缺: 'text-red',
+  部分: 'text-amber',
+  超配: 'text-ink-3',
+}
 
 const dayLabel = (p: PipelineRow): string =>
   p.nextIn === null ? '' : p.nextIn < 0 ? `已过 ${Math.abs(p.nextIn)} 天` : p.nextIn === 0 ? '今天' : `${p.nextIn} 天后`
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-[1240px] flex-col gap-3">
+  <div class="mx-auto flex w-full max-w-[1240px] flex-col gap-4">
     <div v-if="!pipeline.length" class="panel">
       <p class="text-[13px] text-ink-2">还没有岗位记录。</p>
     </div>
 
-    <template v-else>
-      <!-- 工具栏 -->
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="tabs">
-          <button class="tab" :class="view === 'list' ? 'tab-active' : ''" @click="view = 'list'">
-            <PhListBullets :size="12" weight="bold" class="mr-1 inline" />
-            列表
-          </button>
-          <button class="tab" :class="view === 'board' ? 'tab-active' : ''" @click="view = 'board'">
-            <PhKanban :size="12" weight="bold" class="mr-1 inline" />
-            看板
-          </button>
-        </div>
-
-        <div class="ml-1 flex flex-wrap items-center gap-3 text-[12px]">
+    <div v-else class="flex items-start gap-8">
+      <!-- 左：场次 -->
+      <aside class="w-[246px] shrink-0">
+        <div class="flex items-center gap-3 px-1 pb-2 text-[12px]">
           <button
+            v-for="f in [
+              { id: 'all', label: '全部' },
+              { id: 'live', label: '进行中' },
+              { id: 'done', label: '已结束' },
+            ] as { id: Filter; label: string }[]"
+            :key="f.id"
             class="transition-colors"
-            :class="!stageFilter ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'"
-            @click="stageFilter = ''"
+            :class="filter === f.id ? 'text-ink' : 'text-ink-3 hover:text-ink'"
+            @click="filter = f.id"
           >
-            全部
-          </button>
-          <button
-            v-for="g in groups"
-            :key="g.stage"
-            class="flex items-center transition-colors"
-            :class="stageFilter === g.stage ? 'font-medium text-ink' : 'text-ink-3 hover:text-ink'"
-            @click="stageFilter = g.stage"
-          >
-            <span class="dot mr-1.5" :class="stageTone(g.stage)" />
-            {{ g.stage }}
-            <span class="ml-1 font-mono text-[10px] text-ink-3">{{ g.rows.length }}</span>
+            {{ f.label }}
           </button>
         </div>
-      </div>
 
-      <div class="flex min-h-0 gap-3">
-        <!-- 主区 -->
-        <div class="panel min-w-0 flex-1 !p-0">
-          <!-- 列表 -->
-          <div v-if="view === 'list'" class="overflow-x-auto">
-            <table class="w-full border-collapse text-[13px]">
-              <thead>
-                <tr class="bg-base">
-                  <th class="w-[150px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">公司</th>
-                  <th class="border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">岗位</th>
-                  <th class="w-[96px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">阶段</th>
-                  <th class="w-[104px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">下一轮</th>
-                  <th v-if="hasReadiness" class="w-[68px] border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">准备度</th>
-                  <th class="border-b border-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3">下一步</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="p in rows"
-                  :key="p.key"
-                  class="cursor-pointer border-b border-line transition-colors last:border-b-0 hover:bg-hover"
-                  :class="p.key === selected ? 'bg-raised' : ''"
-                  @click="selected = p.key"
-                >
-                  <td class="px-3 py-2 font-medium text-ink">{{ p.company }}</td>
-                  <td class="px-3 py-2 text-ink-2">{{ p.role }}</td>
-                  <td class="px-3 py-2">
-                    <span class="chip"><span class="dot" :class="stageTone(p.stage)" />{{ p.stage }}</span>
-                    <span v-if="!p.stageKnown" class="ml-1 text-[10px] text-amber">阶段未识别</span>
-                  </td>
-                  <td class="px-3 py-2">
-                    <template v-if="p.nextRound">
-                      <div class="text-ink-2">{{ p.nextRound }}</div>
-                      <div class="font-mono text-[10px]" :class="p.nextIn !== null && p.nextIn < 0 ? 'text-red' : 'text-amber'">
-                        {{ dayLabel(p) }}
-                      </div>
-                    </template>
-                  </td>
-                  <td v-if="hasReadiness" class="px-3 py-2">
-                    <span :class="readinessTone(p.readinessScore)">{{ p.readiness }}</span>
-                  </td>
-                  <td class="max-w-[280px] truncate px-3 py-2 text-ink-2" :title="p.action">{{ p.action }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <button
+          v-for="p in rows"
+          :key="p.key"
+          class="flex w-full flex-col gap-1 border-b border-line px-1 py-2.5 text-left transition-colors last:border-b-0 hover:bg-hover"
+          :class="p.key === selected ? 'bg-raised' : ''"
+          @click="selected = p.key"
+        >
+          <span class="flex w-full items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-[13px] font-medium" :class="p.key === selected ? 'text-ink' : 'text-ink-2'">
+              {{ p.company }}
+            </span>
+            <span
+              v-if="p.nextIn !== null"
+              class="shrink-0 font-mono text-[10px]"
+              :class="p.nextIn < 0 ? 'text-red' : 'text-amber'"
+            >
+              {{ dayLabel(p) }}
+            </span>
+          </span>
+          <span class="flex w-full items-center gap-1.5 text-[12px] text-ink-3">
+            <span class="dot shrink-0" :class="stageTone(p.stage)" />
+            <span class="min-w-0 flex-1 truncate">{{ p.stage }} · {{ p.role }}</span>
+          </span>
+        </button>
+      </aside>
 
-          <!-- 看板 -->
-          <div v-else class="flex gap-3 overflow-x-auto p-3">
-            <div v-for="g in groups" :key="g.stage" class="w-[220px] shrink-0">
-              <div class="group-head">
-                <span class="dot" :class="stageTone(g.stage)" />
-                {{ g.stage }}
-                <span class="ml-auto font-mono text-[10px] text-ink-3">{{ g.rows.length }}</span>
-              </div>
-              <div class="mt-1 flex flex-col gap-1.5">
-                <button
-                  v-for="p in g.rows"
-                  :key="p.key"
-                  class="rounded-md border border-line bg-base p-2.5 text-left transition-colors hover:border-line-strong"
-                  :class="p.key === selected ? 'border-brand' : ''"
-                  @click="selected = p.key"
-                >
-                  <p class="truncate text-[13px] font-medium text-ink">{{ p.company }}</p>
-                  <p class="mt-0.5 truncate text-[11px] text-ink-3">{{ p.role }}</p>
-                  <p v-if="p.nextRound" class="mt-1.5 flex items-center gap-1 text-[10px]" :class="p.nextIn !== null && p.nextIn < 0 ? 'text-red' : 'text-amber'">
-                    <PhCalendar :size="10" weight="bold" />
-                    {{ p.nextRound }} · {{ dayLabel(p) }}
-                  </p>
-                  <p v-if="p.action" class="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-ink-2">{{ p.action }}</p>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      <!-- 右：这场面试 -->
+      <main v-if="active" class="flex min-w-0 max-w-[780px] flex-1 flex-col gap-7">
+        <header>
+          <h2 class="text-[20px] font-semibold leading-tight text-ink">{{ active.company }} · {{ active.role }}</h2>
+          <p class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
+            <span class="flex items-center gap-1.5"><span class="dot" :class="stageTone(active.stage)" />{{ active.stage }}</span>
+            <span v-if="active.nextRound">{{ active.nextRound }}</span>
+            <span v-if="active.appliedRaw">投于 {{ active.appliedRaw }}</span>
+          </p>
 
-        <!-- 详情栏 -->
-        <aside v-if="active" class="panel w-[300px] shrink-0 self-start !p-0">
-          <div class="border-b border-line px-3.5 py-3">
-            <p class="text-[14px] font-semibold text-ink">{{ active.company }}</p>
-            <p class="mt-0.5 text-[12px] text-ink-2">{{ active.role }}</p>
-            <div class="mt-2 flex items-center gap-2">
-              <span class="chip"><span class="dot" :class="stageTone(active.stage)" />{{ active.stage }}</span>
-              <span v-if="active.applied" class="text-[11px] text-ink-3">投递于 {{ active.applied }}（{{ active.appliedAge }} 天前）</span>
-              <span v-else-if="active.appliedRaw" class="text-[11px] text-ink-3">投递于 {{ active.appliedRaw }} · 具体日期待补</span>
-            </div>
-          </div>
-
-          <div class="border-b border-line px-3.5 py-3">
-            <p class="mb-1 text-[11px] uppercase tracking-wide text-ink-3">下一步</p>
-            <p class="text-[13px] leading-relaxed text-ink">{{ active.action || '还没有下一步' }}</p>
-          </div>
-
-          <div v-if="active.evidenceIds.length" class="border-b border-line px-3.5 py-3">
-            <p class="mb-2 flex items-center gap-1 text-[11px] uppercase tracking-wide text-ink-3">
-              <PhTrophy :size="12" weight="bold" />
-              关联成果
-            </p>
-            <button v-for="id in active.evidenceIds" :key="id" class="row py-1.5" @click="emit('go', 'evidence')">
-              <span class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ evidenceById(id)?.title || '还没有这张卡' }}</span>
-              <PhArrowRight v-if="!evidenceById(id)" :size="11" weight="bold" class="shrink-0 text-amber" />
-            </button>
-          </div>
-
-          <div v-if="active.knowledgeIds.length" class="border-b border-line px-3.5 py-3">
-            <p class="mb-2 flex items-center gap-1 text-[11px] uppercase tracking-wide text-ink-3">
-              <PhGraph :size="12" weight="bold" />
-              关联知识
-            </p>
-            <button v-for="id in active.knowledgeIds" :key="id" class="row py-1.5" @click="emit('go', 'knowledge')">
-              <span class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ knowledgeById(id)?.title || '还没有这张卡' }}</span>
-              <span v-if="knowledgeById(id)" class="chip shrink-0">{{ knowledgeById(id)?.level }}</span>
-            </button>
-          </div>
-
-          <div class="flex gap-2 px-3.5 py-3">
-            <button class="btn btn-primary flex-1" @click="emit('go', 'coach')">
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button v-if="war" class="btn btn-primary" @click="emit('go', 'warroom')">
               <PhLightning :size="13" weight="bold" />
-              训练这个岗位
+              岗位作战室 {{ war.total }} 题
             </button>
+            <button v-if="active.nextIn !== null" class="btn" :class="war ? '' : 'btn-primary'" @click="emit('go', 'coach')">
+              <PhLightning :size="13" weight="bold" />
+              开始模拟
+            </button>
+            <button v-if="bank.length" class="btn" @click="emit('go', 'pitch::高频真题')">
+              {{ active.company }} 真题 {{ bank.length }} 道
+            </button>
+            <button v-if="docId" class="btn" @click="emit('go', docId)">完整资料</button>
           </div>
-        </aside>
-      </div>
-    </template>
+
+          <div v-if="active.action" class="mt-4 border-l-2 border-amber/60 pl-3">
+            <p class="text-[13px] leading-[21px] text-ink-2">{{ active.action }}</p>
+          </div>
+
+          <p v-if="brief?.facts.length" class="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] leading-[18px]">
+            <span v-for="f in brief.facts" :key="f.k" class="flex gap-1.5">
+              <span class="text-ink-3">{{ f.k }}</span>
+              <span class="text-ink-2" v-html="inline(f.v)" />
+            </span>
+          </p>
+        </header>
+
+        <p v-if="active && !brief" class="text-[13px] leading-[20px] text-ink-2">
+          这家还没录岗位职责。
+          <button class="text-ink underline decoration-line underline-offset-4" @click="emit('go', 'companies')">
+            补公司资料
+          </button>
+        </p>
+
+        <section v-if="brief?.what.length">
+          <h3 class="mb-2 text-[13px] font-semibold text-ink">公司是做什么的</h3>
+          <Blocks :blocks="brief.what" mid-prefix="brief-what" size="sm" />
+        </section>
+
+        <section v-if="brief?.duties.length">
+          <h3 class="mb-2 text-[13px] font-semibold text-ink">岗位职责</h3>
+          <Blocks :blocks="brief.duties" mid-prefix="brief-duty" size="sm" />
+        </section>
+
+        <section v-if="brief?.requirements.length">
+          <button class="flex w-full items-center gap-1.5 text-left" @click="openReq = !openReq">
+            <h3 class="text-[13px] font-semibold text-ink">任职要求</h3>
+            <PhCaretRight
+              :size="11"
+              weight="bold"
+              class="text-ink-3 transition-transform"
+              :class="openReq ? 'rotate-90' : ''"
+            />
+          </button>
+          <div v-if="openReq" class="mt-2">
+            <Blocks :blocks="brief.requirements" mid-prefix="brief-req" size="sm" />
+          </div>
+        </section>
+
+        <section v-if="brief?.gaps.length">
+          <h3 class="mb-1 text-[13px] font-semibold text-ink">会被追着问的</h3>
+          <div
+            v-for="(g, i) in brief.gaps"
+            :key="i"
+            class="flex flex-col gap-0.5 border-b border-line py-2 last:border-b-0"
+          >
+            <p class="flex items-baseline gap-2 text-[13px] leading-[20px] text-ink">
+              <span class="shrink-0 font-mono text-[11px]" :class="GAP_TONE[g.cover] || 'text-ink-3'">{{ g.cover }}</span>
+              <span class="min-w-0" v-html="inline(g.need)" />
+            </p>
+            <p v-if="g.ask" class="pl-[34px] text-[12px] leading-[18px] text-ink-3" v-html="inline(g.ask)" />
+          </div>
+        </section>
+
+        <section v-if="brief?.todo.length">
+          <h3 class="mb-1 text-[13px] font-semibold text-ink">面试前要做完</h3>
+          <ul class="flex flex-col">
+            <li
+              v-for="(x, xi) in brief.todo"
+              :key="xi"
+              class="flex items-start gap-2 border-b border-line py-2 text-[13px] leading-[20px] text-ink-2 last:border-b-0"
+            >
+              <span class="mt-1.5 h-2 w-2 shrink-0 rounded-[2px] border border-ink-3" />
+              <span class="min-w-0" v-html="inline(x)" />
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="materials.length">
+          <h3 class="mb-1 text-[13px] font-semibold text-ink">职责对到的技术</h3>
+          <button
+            v-for="m in materials"
+            :key="m.id"
+            class="row group py-1.5 text-[13px]"
+            @click="emit('go', m.id)"
+          >
+            <span class="min-w-0 flex-1 truncate text-ink">{{ m.label }}</span>
+            <span class="shrink-0 text-[11px] text-ink-3">{{ m.count }} 篇</span>
+            <PhArrowRight :size="11" weight="bold" class="shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
+          </button>
+        </section>
+
+        <section v-if="active.evidenceIds.length">
+          <h3 class="mb-1 text-[13px] font-semibold text-ink">能拿出来讲的</h3>
+          <button
+            v-for="id in active.evidenceIds"
+            :key="id"
+            class="row group py-1.5 text-[13px]"
+            @click="emit('go', 'evidence')"
+          >
+            <span class="min-w-0 flex-1 truncate text-ink">{{ evidenceById(id)?.title || id }}</span>
+            <PhArrowRight :size="11" weight="bold" class="shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
+          </button>
+        </section>
+
+        <section v-if="noteDocs.length">
+          <p class="mb-1 text-[13px] font-semibold text-ink">准备笔记</p>
+          <button v-for="d in noteDocs" :key="d.id" class="row group py-1.5 text-[13px]" @click="emit('go', d.id)">
+            <span class="min-w-0 flex-1 truncate text-ink">{{ d.label }}</span>
+            <PhArrowRight :size="11" weight="bold" class="shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100" />
+          </button>
+        </section>
+      </main>
+    </div>
   </div>
 </template>

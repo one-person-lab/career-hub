@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { PhCheck, PhCopy, PhInfo } from '@phosphor-icons/vue'
-import { sectionById, sectionIcon, inline, type Chunk, type SectionDoc } from '../data/store'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { PhDotsThree, PhCopy, PhCheck } from '@phosphor-icons/vue'
+import { sectionById, inline, type Chunk, type SectionDoc } from '../data/store'
 import Blocks from '../components/Blocks.vue'
 
 /**
@@ -9,16 +9,17 @@ import Blocks from '../components/Blocks.vue'
  * 视图层不认识新语法 —— 要加块类型，改 scripts/build-data.mjs 的 parseBlocks()
  * 与 components/Blocks.vue 各一处。
  */
-const props = defineProps<{ id: string }>()
+const props = defineProps<{ id: string; doc?: string }>()
 
 const section = computed(() => sectionById(props.id))
 const docs = computed<SectionDoc[]>(() => section.value?.docs || [])
-const activeName = ref('')
+const activeName = ref(props.doc || '')
 
 watch(
-  () => [props.id, docs.value.length],
+  () => [props.id, props.doc, docs.value.length],
   () => {
-    if (!docs.value.some((d) => d.name === activeName.value)) activeName.value = docs.value[0]?.name || ''
+    if (props.doc && docs.value.some((d) => d.name === props.doc)) activeName.value = props.doc
+    else if (!docs.value.some((d) => d.name === activeName.value)) activeName.value = docs.value[0]?.name || ''
   },
   { immediate: true },
 )
@@ -26,7 +27,10 @@ watch(
 const doc = computed<SectionDoc | undefined>(
   () => docs.value.find((d) => d.name === activeName.value) || docs.value[0],
 )
-const Icon = computed(() => sectionIcon(section.value?.icon || 'doc'))
+
+const meta = computed(() =>
+  [doc.value?.version, doc.value?.status, doc.value?.updated ? `更新 ${doc.value.updated}` : ''].filter(Boolean).join(' · '),
+)
 
 /** 把一块（`##` 到下一个 `##`）还原成可粘贴的纯文本，去掉 md 行内标记 */
 function chunkText(c: Chunk): string {
@@ -48,91 +52,88 @@ function chunkText(c: Chunk): string {
     .replace(/`([^`]+)`/g, '$1')
 }
 
-const copyState = ref<{ i: number; ok: boolean } | null>(null)
+const menu = ref(false)
+const copied = ref<'idle' | 'ok' | 'fail'>('idle')
 let copyTimer: number | undefined
 
-async function copyChunk(i: number, c: Chunk) {
-  let ok = true
+async function copyDoc() {
+  if (!doc.value) return
+  menu.value = false
   try {
-    await navigator.clipboard.writeText(chunkText(c))
+    await navigator.clipboard.writeText([doc.value.title, ...doc.value.chunks.map(chunkText)].join('\n\n'))
+    copied.value = 'ok'
   } catch {
-    ok = false // 非安全上下文或权限被拒，按钮变红而不是静默不响应
+    copied.value = 'fail'
   }
-  copyState.value = { i, ok }
   clearTimeout(copyTimer)
-  copyTimer = window.setTimeout(() => (copyState.value = null), 1800)
+  copyTimer = window.setTimeout(() => (copied.value = 'idle'), 1800)
 }
 
-onBeforeUnmount(() => clearTimeout(copyTimer))
+const closeMenu = () => (menu.value = false)
+onMounted(() => window.addEventListener('click', closeMenu))
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeMenu)
+  clearTimeout(copyTimer)
+})
 </script>
 
 <template>
   <div v-if="!section" class="panel">
-    <h2 class="text-[15px] font-semibold">未找到板块</h2>
+    <p class="text-[13px] text-ink-2">没找到这个板块。</p>
   </div>
 
-  <div v-else class="mx-auto flex max-w-[920px] flex-col gap-3">
-    <div class="panel flex items-center gap-3">
-      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-raised text-ink-2">
-        <component :is="Icon" :size="15" weight="regular" />
-      </span>
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-[14px] font-semibold text-ink">{{ section.label }}</h2>
-        <p v-if="docs.length > 1" class="mt-0.5 text-[11px] text-ink-3">{{ docs.length }} 篇</p>
-      </div>
-      <div v-if="docs.length > 1" class="flex shrink-0 flex-wrap justify-end gap-1">
-        <button
-          v-for="d in docs"
-          :key="d.name"
-          class="chip transition-colors hover:bg-hover hover:text-ink"
-          :class="d.name === doc?.name ? 'chip-solid text-ink' : ''"
-          @click="activeName = d.name"
-        >
-          {{ d.title }}
-        </button>
-      </div>
-    </div>
+  <div v-else class="mx-auto flex max-w-[760px] flex-col gap-6">
+    <header>
+      <div class="flex items-start gap-3">
+        <div class="min-w-0 flex-1">
+          <h1 class="text-[22px] font-semibold leading-[30px] text-ink">{{ doc?.title || section.label }}</h1>
+          <p v-if="meta" class="mt-1 text-[12px] leading-[18px] text-ink-3">{{ meta }}</p>
+        </div>
 
-    <div v-if="!docs.length" class="panel">
-      <p class="flex flex-wrap items-center gap-2 text-[13px] text-ink-2">
-        <PhInfo :size="14" weight="bold" class="shrink-0 text-ink-3" />
-        这个板块还没有内容。
-      </p>
-    </div>
+        <select
+          v-if="docs.length > 1"
+          v-model="activeName"
+          class="h-8 max-w-[220px] shrink-0 rounded-md border border-line bg-transparent px-2 text-[12px] text-ink-2 outline-none focus:border-line-strong"
+        >
+          <option v-for="d in docs" :key="d.name" :value="d.name" class="bg-raised text-ink">{{ d.title }}</option>
+        </select>
+
+        <div v-if="doc" class="relative shrink-0" @click.stop>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+            title="更多"
+            @click="menu = !menu"
+          >
+            <PhDotsThree :size="16" weight="bold" />
+          </button>
+          <div
+            v-if="menu"
+            class="absolute right-0 top-9 z-20 w-[136px] rounded-md border border-line-strong bg-raised p-1 shadow-pop"
+          >
+            <button class="row w-full py-1.5 text-[12px]" @click="copyDoc">
+              <component
+                :is="copied === 'ok' ? PhCheck : PhCopy"
+                :size="12"
+                class="shrink-0"
+                :class="copied === 'fail' ? 'text-red' : copied === 'ok' ? 'text-green' : 'text-ink-3'"
+              />
+              <span>{{ copied === 'ok' ? '已复制' : copied === 'fail' ? '复制失败' : '复制整篇' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <p v-if="!docs.length" class="text-[13px] leading-[20px] text-ink-2">这个板块还没有内容。</p>
 
     <template v-else-if="doc">
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span v-if="doc.version" class="chip chip-solid">{{ doc.version }}</span>
-        <span v-if="doc.status" class="chip">{{ doc.status }}</span>
-        <span v-if="doc.updated" class="chip">更新 {{ doc.updated }}</span>
+      <div v-if="doc.intro.length" class="border-l-2 border-brand pl-3">
+        <p v-for="(l, i) in doc.intro" :key="i" class="text-[14px] leading-[22px] text-ink" v-html="inline(l)" />
       </div>
 
-      <div v-if="doc.intro.length" class="panel border-brand/40 bg-brand-weak">
-        <p v-for="(l, i) in doc.intro" :key="i" class="text-[13px] leading-relaxed text-ink" v-html="inline(l)" />
-      </div>
-
-      <section v-for="(c, ci) in doc.chunks" :key="ci" class="panel !p-0">
-        <div class="group-head border-b border-line">
-          <span class="min-w-0 flex-1">{{ c.name }}</span>
-          <button
-            class="flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-medium transition-colors"
-            :class="
-              copyState && copyState.i === ci
-                ? copyState.ok
-                  ? 'text-green'
-                  : 'text-red'
-                : 'text-ink-3 hover:bg-hover hover:text-ink'
-            "
-            :title="`复制「${c.name}」整块，${chunkText(c).length} 字`"
-            @click="copyChunk(ci, c)"
-          >
-            <component :is="copyState && copyState.i === ci && copyState.ok ? PhCheck : PhCopy" :size="11" />
-            {{ copyState && copyState.i === ci ? (copyState.ok ? '已复制' : '复制失败') : '复制' }}
-          </button>
-        </div>
-        <div class="px-3.5 py-3">
-          <Blocks :blocks="c.blocks" :mid-prefix="`${id}-${doc.name}-${ci}`" />
-        </div>
+      <section v-for="(c, ci) in doc.chunks" :key="ci" class="flex flex-col gap-3">
+        <h2 class="text-[15px] font-semibold leading-[22px] text-ink">{{ c.name }}</h2>
+        <Blocks :blocks="c.blocks" :mid-prefix="`${id}-${doc.name}-${ci}`" />
       </section>
     </template>
   </div>

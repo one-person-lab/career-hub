@@ -20,7 +20,14 @@ import {
   isLive,
   upcomingInterviews,
   stageTone,
+  questionsFor,
+  questionBank,
+  blocksPlain,
+  readCoachHistory,
+  COACH_HISTORY_KEY,
+  type CoachSession,
   type KnowledgeCard,
+  type PipelineRow,
   type EvidenceCard,
 } from '../data/store'
 
@@ -43,19 +50,21 @@ interface Feedback {
   verdict: string
   improve: string[]
   followup: string
+  /** 自评只有一档，不编造三个分项的差别 */
+  self?: boolean
 }
 
-interface Session {
-  id: string
-  at: string
-  job: string
-  rounds: number
-  score: number | null
-}
+type Session = CoachSession
 
-/* ── 训练对象 ─────────────────────────────────────────── */
+/* ── 练习对象 ─────────────────────────────────────────── */
 
 const liveRows = computed(() => pipeline.filter(isLive))
+
+/** 和面试场次列表同序：有排期的按最临近在前 */
+const orderedJobs = computed(() => {
+  const due = (p: PipelineRow): number => (p.nextIn === null ? Number.POSITIVE_INFINITY : p.nextIn)
+  return [...pipeline].sort((a, b) => due(a) - due(b))
+})
 const picked = ref('')
 
 /** 默认停在最近的一场面试上；没排期就停在第一个还在推进的岗位 */
@@ -72,12 +81,11 @@ const relatedKnowledge = computed<KnowledgeCard[]>(() =>
 const relatedEvidence = computed<EvidenceCard[]>(() =>
   (job.value?.evidenceIds || []).map(evidenceById).filter(Boolean) as EvidenceCard[],
 )
-/** 公司作战室同名文档的正文摘要，作为「这家在意什么」的上下文 */
+/** 公司作战室同一篇文档，作为「这家在意什么」的上下文 */
 const companyDoc = computed(() => {
-  const name = job.value?.company || ''
+  const name = job.value?.companyDoc
   if (!name) return null
-  const docs = sectionById('companies')?.docs || []
-  return docs.find((d) => d.title.includes(name) || name.includes(d.title)) || null
+  return sectionById('companies')?.docs.find((d) => d.name === name) || null
 })
 
 /* ── 出题 ─────────────────────────────────────────────── */
@@ -88,11 +96,17 @@ const FALLBACK_QUESTIONS = [
   '你最近一次判断失误是什么时候？当时你怎么定的，后来怎么改的。',
 ]
 
-/** 题库优先级：岗位关联知识的追问链 → 全部知识卡的追问链 → 兜底题 */
+/** 题库优先级：这家没底的点 → 岗位关联知识的追问链 → 这家公司的真题 → 全部真题 → 兜底题 */
 function nextQuestion(used: Set<string>): string {
+  const company = job.value?.company || ''
+  const weak = (job.value?.brief?.gaps || [])
+    .filter((g) => g.cover === '缺' || g.cover === '部分')
+    .map((g) => `岗位要求「${g.need}」，你准备怎么答？`)
   const pools = [
+    weak,
     relatedKnowledge.value.flatMap((k) => k.questions),
-    pipeline.flatMap((p) => p.knowledgeIds).map(knowledgeById).filter(Boolean).flatMap((k) => (k as KnowledgeCard).questions),
+    questionsFor(company),
+    questionBank().flatMap((g) => g.questions),
   ]
   for (const pool of pools) {
     const fresh = pool.filter((q) => q && !used.has(q))
@@ -113,12 +127,19 @@ const elapsed = ref(0)
 const busy = ref(false)
 const error = ref('')
 const finished = ref(false)
-const history = ref<Session[]>(loadHistory())
+const history = ref<Session[]>(readCoachHistory())
 
 let timer = window.setInterval(() => {
   if (question.value && !busy.value && !finished.value) elapsed.value += 1
 }, 1000)
 onBeforeUnmount(() => window.clearInterval(timer))
+
+/** 这台机器配了模型就交给教练评分，没配就当场自评 */
+const coachReady = ref(false)
+fetch('/api/coach')
+  .then((r) => r.json())
+  .then((d: { ready?: boolean }) => (coachReady.value = Boolean(d.ready)))
+  .catch(() => (coachReady.value = false))
 
 const usedQuestions = computed(() => new Set(turns.value.map((t) => t.question)))
 const gradedTurns = computed(() => turns.value.filter((t) => t.feedback))
@@ -146,8 +167,14 @@ function scoreOf(n: number): string {
 /* ── 交给教练 ─────────────────────────────────────────── */
 
 function buildMessages(): unknown[] {
+  const brief = job.value?.brief
   const context = [
     job.value ? `目标岗位：${job.value.company} / ${job.value.role}（阶段 ${job.value.stage}）` : '目标岗位：未指定',
+    brief && brief.what.length ? `公司是做什么的：${blocksPlain(brief.what)}` : '',
+    brief && brief.duties.length ? `岗位职责：${blocksPlain(brief.duties)}` : '',
+    brief && brief.gaps.length
+      ? `这场没底的点：${brief.gaps.map((g) => `${g.cover}·${g.need}${g.ask ? `（${g.ask}）` : ''}`).join('；')}`
+      : '',
     ...relatedEvidence.value.map(
       (e) => `可用成果 ${e.id}《${e.title}》：${e.oneLine || ''} ${e.impact.map((r) => Object.values(r).join(' ')).join('；')}`,
     ),
@@ -232,9 +259,10 @@ function selfScore(score: number) {
     structure: score,
     evidence: score,
     depth: score,
-    verdict: score >= 80 ? '自评：讲顺了，换个岗位复用一次' : score >= 60 ? '自评：骨架在，缺具体数字' : '自评：没讲清楚，回卡片重写',
+    verdict: score >= 80 ? '自评：讲顺了，换个岗位该能复用' : score >= 60 ? '自评：骨架在，缺具体数字' : '自评：没讲清楚，回去重写',
     improve: [],
     followup: '',
+    self: true,
   })
 }
 
@@ -268,19 +296,9 @@ function stop() {
 
 /* ── 历史（localStorage） ─────────────────────────────── */
 
-const HISTORY_KEY = 'career-hub:coach-sessions'
-
-function loadHistory(): Session[] {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as Session[]
-  } catch {
-    return []
-  }
-}
-
 function saveHistory(list: Session[]): void {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(list))
+    localStorage.setItem(COACH_HISTORY_KEY, JSON.stringify(list))
   } catch {
     /* 隐私模式下写入失败不影响训练本身 */
   }
@@ -292,11 +310,11 @@ function saveHistory(list: Session[]): void {
     <!-- 左：岗位选择 + 记录 -->
     <aside class="w-[236px] shrink-0 flex flex-col gap-3">
       <section class="panel !p-0">
-        <div class="group-head border-b border-line">训练对象</div>
+        <div class="group-head border-b border-line">练习对象</div>
         <div class="max-h-[210px] overflow-y-auto p-1.5">
           <p v-if="!pipeline.length" class="px-2 py-4 text-[11px] text-ink-3">管道里还没有岗位，先回首页填管道。</p>
           <button
-            v-for="p in pipeline"
+            v-for="p in orderedJobs"
             :key="p.key"
             class="row py-1.5 text-[12px]"
             :class="job?.key === p.key ? 'bg-raised text-ink' : 'text-ink-2'"
@@ -309,10 +327,10 @@ function saveHistory(list: Session[]): void {
       </section>
 
       <section class="panel !p-0">
-        <div class="group-head border-b border-line">训练记录</div>
+        <div class="group-head border-b border-line">练习记录</div>
         <div class="max-h-[240px] overflow-y-auto p-1.5">
           <p v-if="!history.length" class="px-2 py-4 text-[11px] leading-relaxed text-ink-3">
-            还没有训练记录。
+            还没有练习记录。
           </p>
           <div v-for="s in history" :key="s.id" class="row cursor-default text-[12px]">
             <span class="min-w-0 flex-1 truncate text-ink-2">{{ s.job }}</span>
@@ -328,7 +346,7 @@ function saveHistory(list: Session[]): void {
       <section class="panel flex items-center gap-3">
         <div class="min-w-0 flex-1">
           <p class="truncate text-[14px] font-semibold text-ink">
-            {{ job ? `${job.company} · ${job.role}` : '通用训练' }}
+            {{ job ? `${job.company} · ${job.role}` : '通用题' }}
           </p>
           <p class="mt-0.5 text-[11px] text-ink-2">
             {{ job ? (job.action ? `${job.stage} · 下一步：${job.action}` : job.stage) : '管道为空，练的是通用题' }}
@@ -361,21 +379,23 @@ function saveHistory(list: Session[]): void {
           class="input mt-3 w-full"
           rows="7"
           placeholder="像当场回答那样写出来：先结论，再你的动作，最后数字。别写提纲。"
-          @keydown.meta.enter.prevent="submit"
+          @keydown.meta.enter.prevent="coachReady && submit()"
         />
 
         <div class="mt-2 flex flex-wrap items-center gap-2">
-          <button class="btn btn-primary" :disabled="!answer.trim() || busy" @click="submit">
-            <PhSpinner v-if="busy" :size="12" class="animate-spin" />
-            {{ busy ? '教练在评…' : '交卷评分' }}
-          </button>
-          <span class="text-[11px] text-ink-3"><span class="kbd">⌘</span><span class="kbd">↵</span></span>
-          <div class="ml-auto flex items-center gap-1.5">
-            <span class="text-[11px] text-ink-3">没接模型时自评：</span>
-            <button class="btn btn-ghost" :disabled="!answer.trim()" @click="selfScore(88)">讲清楚了</button>
-            <button class="btn btn-ghost" :disabled="!answer.trim()" @click="selfScore(62)">一般</button>
-            <button class="btn btn-ghost" :disabled="!answer.trim()" @click="selfScore(38)">没讲清</button>
-          </div>
+          <template v-if="coachReady">
+            <button class="btn btn-primary" :disabled="!answer.trim() || busy" @click="submit">
+              <PhSpinner v-if="busy" :size="12" class="animate-spin" />
+              {{ busy ? '教练在评…' : '交卷评分' }}
+            </button>
+            <span class="text-[11px] text-ink-3"><span class="kbd">Cmd</span><span class="kbd">Enter</span></span>
+          </template>
+          <template v-else>
+            <span class="text-[11px] text-ink-3">这题讲得怎么样</span>
+            <button class="btn" :disabled="!answer.trim()" @click="selfScore(88)">讲清楚了</button>
+            <button class="btn" :disabled="!answer.trim()" @click="selfScore(62)">一般</button>
+            <button class="btn" :disabled="!answer.trim()" @click="selfScore(38)">没讲清</button>
+          </template>
         </div>
 
         <p v-if="error" class="mt-2 flex items-start gap-1.5 text-[12px] leading-relaxed text-red">
@@ -415,9 +435,9 @@ function saveHistory(list: Session[]): void {
 
           <div v-if="t.feedback">
             <div class="flex flex-wrap items-center gap-1.5">
-              <span class="chip">结构 {{ t.feedback.structure }}</span>
-              <span class="chip">证据 {{ t.feedback.evidence }}</span>
-              <span class="chip">深度 {{ t.feedback.depth }}</span>
+              <span v-if="!t.feedback.self" class="chip">结构 {{ t.feedback.structure }}</span>
+              <span v-if="!t.feedback.self" class="chip">实例 {{ t.feedback.evidence }}</span>
+              <span v-if="!t.feedback.self" class="chip">深度 {{ t.feedback.depth }}</span>
               <span class="ml-1 text-[13px] text-ink">{{ t.feedback.verdict }}</span>
             </div>
             <ul v-if="t.feedback.improve.length" class="mt-2 flex flex-col gap-1">
@@ -456,17 +476,14 @@ function saveHistory(list: Session[]): void {
         </div>
       </section>
 
-      <section class="panel !p-0">
+      <section v-if="relatedKnowledge.length" class="panel !p-0">
         <div class="group-head border-b border-line">
           <PhBrain :size="13" weight="bold" />
           知识与追问素材
         </div>
         <div class="max-h-[420px] overflow-y-auto p-1.5">
-          <p v-if="!relatedKnowledge.length" class="px-2 py-3 text-[11px] leading-relaxed text-ink-3">
-            没挂知识卡，题目会退到通用题库。
-          </p>
           <div v-for="k in relatedKnowledge" :key="k.id" class="border-b border-line px-2 py-2.5 last:border-b-0">
-            <button class="flex w-full items-center gap-1.5 text-left" @click="emit('go', 'knowledge')">
+            <button class="flex w-full items-center gap-1.5 text-left" @click="emit('go', 'prep-know')">
               <span class="min-w-0 flex-1 truncate text-[12px] text-ink">{{ k.title }}</span>
               <span class="chip shrink-0">{{ k.level || '未标' }}</span>
             </button>
@@ -484,7 +501,7 @@ function saveHistory(list: Session[]): void {
         <div class="p-3">
           <p v-for="(l, i) in companyDoc.intro" :key="i" class="text-[12px] leading-relaxed text-ink-2">{{ l }}</p>
           <button class="btn btn-ghost mt-2" @click="emit('go', 'companies')">
-            打开作战室
+            打开公司资料
             <PhArrowRight :size="11" weight="bold" />
           </button>
         </div>

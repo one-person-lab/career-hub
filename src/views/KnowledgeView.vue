@@ -76,7 +76,9 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-[1280px] gap-3">
+  <div v-if="!knowledge.length" class="panel text-[13px] text-ink-2">还没有知识卡。</div>
+
+  <div v-else class="mx-auto flex max-w-[1280px] gap-3">
     <!-- 左：知识目录 -->
     <aside class="w-[238px] shrink-0 flex flex-col gap-2">
       <div v-if="dist.length" class="panel !p-2.5">
@@ -204,10 +206,6 @@ const noNumber = computed(() => knowledge.filter((k) => k.numbers.length === 0).
           <p v-if="!restChunks(active).length" class="text-[12px] text-ink-3">这张卡的正文都已经在上面了。</p>
         </div>
       </section>
-    </main>
-
-    <main v-else class="min-w-0 flex-1">
-      <div class="panel text-[13px] leading-relaxed text-ink-2">还没有知识卡。</div>
     </main>
 
     <!-- 右：关联与状态 -->

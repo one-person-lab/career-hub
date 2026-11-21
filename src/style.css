@@ -124,6 +124,9 @@ h1, h2, h3, h4, h5, h6 {
   .btn:hover { background: #232427; border-color: var(--color-line-strong); }
   .btn:active { transform: translateY(0.5px); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  /* 讲解时点过的按钮不该留着焦点框；键盘 Tab 仍然给可见焦点 */
+  .btn:focus { outline: none; }
+  .btn:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
 
   .btn-primary {
     background: var(--color-brand);

@@ -1,37 +1,63 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { PhMagnifyingGlass, PhLightning } from '@phosphor-icons/vue'
+import { PhMagnifyingGlass, PhArrowLeft } from '@phosphor-icons/vue'
 import SideNav from './components/SideNav.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import HomeView from './views/HomeView.vue'
-import PipelineView from './views/PipelineView.vue'
+import PrepView from './views/PrepView.vue'
 import CoachView from './views/CoachView.vue'
 import EvidenceView from './views/EvidenceView.vue'
-import KnowledgeView from './views/KnowledgeView.vue'
+import LibraryView from './views/LibraryView.vue'
 import DocView from './views/DocView.vue'
-import { sectionById } from './data/store'
+import SettingsView from './views/SettingsView.vue'
+import { sectionById, navIdOf, primaryNav } from './data/store'
 
 const current = ref('overview')
+/** DocView 里要打开的那一篇；`板块::文档` 的写法由 go() 拆开 */
+const docName = ref('')
 const palette = ref(false)
 
-/** 内置视图；不在这张表里的 id 一律交给通用板块渲染器 DocView */
+function go(target: string) {
+  const [page, doc] = target.split('::')
+  current.value = page
+  docName.value = doc || ''
+}
+
+/** 内置页面；不在这张表里的 id 一律交给通用板块渲染器 DocView */
 const BUILTIN: Record<string, unknown> = {
   overview: HomeView,
-  pipeline: PipelineView,
-  coach: CoachView,
+  prep: PrepView,
+  'prep-know': PrepView,
+  warroom: PrepView,
   evidence: EvidenceView,
-  knowledge: KnowledgeView,
+  library: LibraryView,
+  coach: CoachView,
+  settings: SettingsView,
 }
 
 const activeView = computed(() => BUILTIN[current.value] || DocView)
 const isDocView = computed(() => activeView.value === DocView)
 
-/** 只有 DocView 需要 id；内置视图传了会落到根元素上，避免这个副作用 */
-const extraProps = computed(() => (isDocView.value ? { id: current.value } : {}))
+/** 文档页要板块 id；面试准备要页签。内置视图不传无关的 prop */
+const extraProps = computed(() => {
+  if (isDocView.value) return { id: current.value === 'settings' ? 'method' : current.value, doc: docName.value }
+  if (current.value === 'prep') return { tab: 'jobs' }
+  if (current.value === 'prep-know') return { tab: 'know' }
+  if (current.value === 'warroom') return { tab: 'war' }
+  return {}
+})
 
-const section = computed(() => sectionById(current.value))
+const title = computed(() => {
+  if (['prep-know', 'warroom'].includes(current.value)) return '面试准备'
+  if (current.value === 'coach') return '模拟问答'
+  if (current.value === 'settings') return '设置'
+  return sectionById(current.value)?.label || '职业工作台'
+})
 
-const QUICK = ['overview', 'pipeline', 'coach', 'evidence', 'knowledge']
+/** 文档页回到它挂靠的那张页面 */
+const backTo = computed(() => (current.value === 'settings' ? 'overview' : navIdOf(current.value)))
+
+const QUICK = primaryNav().map((s) => s.id)
 
 const isTyping = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
@@ -54,7 +80,7 @@ function onKey(e: KeyboardEvent) {
     return
   }
   const n = Number(e.key)
-  if (n >= 1 && n <= QUICK.length) current.value = QUICK[n - 1]
+  if (n >= 1 && n <= QUICK.length) go(QUICK[n - 1])
 }
 
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -63,30 +89,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="flex h-screen overflow-hidden bg-base">
-    <SideNav :current="current" @select="current = $event" />
+    <SideNav :current="current" @select="go" />
 
     <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
-        <h1 class="shrink-0 text-[13px] font-semibold text-ink">{{ section?.label || '职业工作台' }}</h1>
+      <header class="flex h-[52px] shrink-0 items-center gap-2 px-7">
+        <button v-if="isDocView" class="btn btn-ghost -ml-2 !px-1.5" title="返回" @click="go(backTo)">
+          <PhArrowLeft :size="13" weight="bold" />
+        </button>
+        <h1 class="shrink-0 text-[15px] font-semibold text-ink">{{ title }}</h1>
 
-        <div class="ml-auto flex shrink-0 items-center gap-2">
-          <button class="btn btn-ghost" @click="palette = true">
-            <PhMagnifyingGlass :size="13" weight="bold" />
-            搜索
-            <span class="kbd ml-1">⌘K</span>
-          </button>
-          <button class="btn btn-primary" @click="current = 'coach'">
-            <PhLightning :size="13" weight="bold" />
-            开始训练
-          </button>
-        </div>
+        <button class="btn btn-ghost ml-auto text-ink-3 hover:text-ink" @click="palette = true">
+          <PhMagnifyingGlass :size="13" weight="bold" />
+          <span class="kbd ml-1">Cmd K</span>
+        </button>
       </header>
 
-      <main class="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6">
-        <component :is="activeView" :key="current" v-bind="extraProps" @go="current = $event" />
+      <main class="min-h-0 flex-1 overflow-y-auto px-7 pb-10 pt-1">
+        <component :is="activeView" :key="current" v-bind="extraProps" @go="go" />
       </main>
     </div>
 
-    <CommandPalette v-if="palette" @select="current = $event" @close="palette = false" />
+    <CommandPalette v-if="palette" @select="go" @close="palette = false" />
   </div>
 </template>

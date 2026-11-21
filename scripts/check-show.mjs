@@ -15,8 +15,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PRIV = join(ROOT, 'src/data/generated.json')
 const SHOW = join(ROOT, 'src/data/generated.show.json')
 
-/** 演示卡里一律不得出现的内部字段：file 会暴露本地路径与真实项目命名 */
-const PRIVATE_FIELDS = ['file', 'name', 'dir', 'chars', 'hasStar', 'updated', 'show', 'showHidden']
+/** 演示卡里一律不得出现的内部字段：file 暴露本地路径，raw 是未裁剪正文，reuse 是给自己看的用途标记 */
+const PRIVATE_FIELDS = ['file', 'name', 'dir', 'chars', 'hasStar', 'updated', 'raw', 'reuse', 'show', 'showHidden']
 
 const fails = []
 const check = (ok, msg) => {
@@ -60,30 +60,39 @@ for (const c of show.cards) {
   if (!src) continue
   const hidden = new Set(src.showHidden || [])
 
-  const stillThere = c.chunks.map((x) => x.name).filter((n) => hidden.has(n))
+  const stillThere = c.chapters.map((x) => x.name).filter((n) => hidden.has(n))
   check(stillThere.length === 0, `[段未删] ${c.id} 仍含隐藏段：${stillThere.join(', ')}`)
 
-  // 参照集 = 源卡里没被隐藏的段（含「影响」「架构图」，这两段在演示包里单独渲染，不在 chunks 里）
+  // 参照集 = 源卡里没被隐藏的段（「影响」「讲解提纲」另有用途，不成章、不带图）
+  const SPECIAL = new Set(['影响', '讲解提纲'])
   const srcKeptCodes = new Set(
     src.chunks
-      .filter((ch) => !hidden.has(ch.name))
+      .filter((ch) => !hidden.has(ch.name) && !SPECIAL.has(ch.name))
       .flatMap((ch) => ch.blocks.filter((b) => b.type === 'mermaid').map((b) => b.text)),
   )
-  const orphan = c.diagrams.filter((d) => !srcKeptCodes.has(d.code))
-  check(orphan.length === 0, `[图残留] ${c.id} 的图来自已隐藏的段：${orphan.map((d) => d.name).join(', ')}`)
+  const showCodes = new Set(c.chapters.flatMap((ch) => ch.diagrams))
 
-  const showCodes = new Set(c.diagrams.map((d) => d.code))
+  const orphan = [...showCodes].filter((code) => !srcKeptCodes.has(code))
+  check(orphan.length === 0, `[图残留] ${c.id} 有图来自已隐藏的段：${orphan.length} 张`)
+
   const dropped = [...srcKeptCodes].filter((code) => !showCodes.has(code))
   check(dropped.length === 0, `[图丢失] ${c.id} 保留了段落却没带上它的图：${dropped.length} 张`)
 
-  check(
-    c.diagrams.every((d, i) => d.id === `d${i + 1}`),
-    `[图编号] ${c.id} 的 diagrams id 不连续：${c.diagrams.map((d) => d.id).join(',')}`,
-  )
+  const names = c.chapters.map((ch) => ch.name)
+  check(new Set(names).size === names.length, `[章节重名] ${c.id}：${names.join(', ')}`)
 
   check(
-    !c.chunks.some((x) => x.name === '影响' || x.name === '架构图'),
-    `[段重复] ${c.id} 的 chunks 里还留着「影响」或「架构图」`,
+    !c.chapters.some((ch) => SPECIAL.has(ch.name)),
+    `[段重复] ${c.id} 的章节里还留着「影响」或「讲解提纲」`,
+  )
+
+  // 提纲必须来自「讲解提纲」段，不能凭空长出来
+  const srcItems = ((src.chunks.find((ch) => ch.name === '讲解提纲') || {}).blocks || [])
+    .filter((b) => b.type === 'list')
+    .flatMap((b) => b.items)
+  check(
+    JSON.stringify(c.outline) === JSON.stringify(srcItems),
+    `[提纲错位] ${c.id} 的 outline 与「讲解提纲」段不一致`,
   )
 }
 
@@ -94,7 +103,7 @@ check(hitTitles.length === 0, `[标题泄漏] 演示包出现未发布项目：$
 
 // 8. 知识卡与管道完全不进演示包
 check(!showText.includes('面试追问链') && !showText.includes('掌握度'), '[串包] 演示包含知识卡字段')
-check(!('pipeline' in show) && !('knowledge' in show) && !('sections' in show), '[串包] 演示包含私有分区')
+check(!('pipeline' in show) && !('knowledge' in show) && !('sections' in show) && !('warroom' in show), '[串包] 演示包含私有分区')
 
 // ── 产物层 ────────────────────────────────────────────────
 // 指纹不是手写的黑名单，而是从全量 generated.json 现算的「私有内容独有的字符串」，
@@ -118,7 +127,7 @@ if (process.argv.includes('--dist')) {
   const squeezed = bundle.replace(/\s+/g, '')
 
   const showIds = new Set(show.cards.map((c) => c.id))
-  const fingerprints = [
+  const candidates = [
     ...priv.evidence.filter((c) => !showIds.has(c.id)).map((c) => c.title),
     ...priv.knowledge.map((k) => k.title),
     ...priv.knowledge.flatMap((k) => k.numbers || []),
@@ -130,7 +139,19 @@ if (process.argv.includes('--dist')) {
     .filter(Boolean)
     .filter((t) => String(t).length >= 3)
 
-  const hits = fingerprints.filter((t) => bundle.includes(t))
+  // 只留「私有内容独有」的串：演示包本来就写的词（如项目名里的「无人机」）不算泄漏证据，
+  // 留着会天天误报，反而让人无视这条闸门。
+  const fingerprints = candidates.filter((t) => !showText.includes(t))
+  const shared = candidates.length - fingerprints.length
+
+  // 纯英文指纹按整词匹配：短词（RAG）会误中打包文件名里的哈希（info-A6RAGUB7.js）
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const hasWord = (t) =>
+    /^[\x00-\x7F]+$/.test(t)
+      ? new RegExp(`(?<![A-Za-z0-9_])${esc(t)}(?![A-Za-z0-9_])`).test(bundle)
+      : bundle.includes(t)
+
+  const hits = fingerprints.filter(hasWord)
   check(hits.length === 0, `[指纹命中] dist-show 里出现私有内容：${hits.slice(0, 8).join(' / ')}`)
 
   // 隐藏段即使在已发布的卡里也不能留正文
@@ -148,7 +169,9 @@ if (process.argv.includes('--dist')) {
   check(!bundle.includes('content.private'), '[路径泄漏] dist-show 里出现 content.private')
   check(!bundle.includes('/api/coach'), '[接口泄漏] dist-show 里挂了面试教练代理调用')
 
-  console.log(`[check-show] 产物层扫描 ${files.length} 个文件、${fingerprints.length} 条指纹`)
+  console.log(
+    `[check-show] 产物层扫描 ${files.length} 个文件、${fingerprints.length} 条私有独有指纹（跳过 ${shared} 条演示包本就包含的词）`,
+  )
 }
 
 if (fails.length) {

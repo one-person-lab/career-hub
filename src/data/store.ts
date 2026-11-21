@@ -1,5 +1,5 @@
 import raw from './generated.json'
-import type { Chunk, Diagram } from './types'
+import type { Block, Chunk, Diagram } from './types'
 import {
   PhGauge,
   PhCompass,
@@ -16,6 +16,10 @@ import {
   PhFiles,
   PhKanban,
   PhMicrophone,
+  PhBookOpenText,
+  PhArchive,
+  PhBooks,
+  PhGear,
 } from '@phosphor-icons/vue'
 
 /* ==================== 通用块 ==================== */
@@ -74,6 +78,20 @@ export interface KnowledgeCard {
 
 /* ==================== 岗位管道 ==================== */
 
+/** 这场面试要什么：公司简介、职责、要求、我缺的那几块 */
+export interface PipelineBrief {
+  doc: string
+  /** 基本信息摊到场页：公司、薪资、地点、硬性要求 */
+  facts: { k: string; v: string }[]
+  jdLink: string
+  what: Block[]
+  duties: Block[]
+  requirements: Block[]
+  gaps: { need: string; cover: string; ask: string }[]
+  /** 「面试前要做完」清单 */
+  todo: string[]
+}
+
 export interface PipelineRow {
   key: string
   company: string
@@ -94,6 +112,9 @@ export interface PipelineRow {
   evidenceIds: string[]
   knowledgeIds: string[]
   row: number
+  brief?: PipelineBrief
+  /** 同名公司资料的文档名；有它才有「完整资料」可点，哪怕职责还没录 */
+  companyDoc?: string
 }
 
 /* ==================== 通用板块 ==================== */
@@ -106,6 +127,8 @@ export interface SectionDoc {
   status: string
   updated: string
   intro: string[]
+  /** 列表里的一句话，取引用或正文第一段 */
+  summary: string
   chunks: Chunk[]
   flowCount: number
   chars: number
@@ -114,7 +137,10 @@ export interface SectionDoc {
 export interface Section {
   id: string
   label: string
-  group: string
+  /** 挂在哪张页面里：nav = 一级导航；prep-jobs / prep-know 是面试准备的两个页签；evidence / help */
+  host: string
+  /** 知识库里的分组：技术 / 项目 / 求职；其他页面没有 */
+  group?: string
   order: number
   icon: string
   /** 导航里的色块底色 class */
@@ -135,21 +161,150 @@ export const evidence: EvidenceCard[] = r.evidence as EvidenceCard[]
 export const knowledge: KnowledgeCard[] = r.knowledge as KnowledgeCard[]
 export const pipeline: PipelineRow[] = (r.pipeline as PipelineRow[]) ?? []
 
+/* ==================== 岗位作战室 ==================== */
+
+export interface WarQuestion {
+  id: string
+  level: string
+  q: string
+  asked: string[]
+  answer: Block[]
+  diagram: Block[]
+  followups: string[]
+}
+
+export interface WarGroup {
+  code: string
+  title: string
+  questions: WarQuestion[]
+}
+
+export interface WarRoom {
+  company: string
+  role: string
+  doc: string
+  groups: WarGroup[]
+  total: number
+}
+
+export const warrooms: WarRoom[] = (r.warroom as WarRoom[]) ?? []
+
+/** 岗位名对不上时退回第一篇，作战室永远有东西可看 */
+export const warRoomFor = (company: string): WarRoom | undefined =>
+  warrooms.find((w) => company && (company.includes(w.company) || w.company.includes(company))) || warrooms[0]
+export const generatedAt = String(r.generatedAt || '')
+
 /* ==================== 派生指标 ==================== */
 
-export const sectionGroups: { group: string; items: Section[] }[] = (() => {
-  const map = new Map<string, Section[]>()
-  for (const s of sections) {
-    if (!map.has(s.group)) map.set(s.group, [])
-    map.get(s.group)!.push(s)
-  }
-  return [...map.entries()].map(([group, items]) => ({ group, items }))
-})()
+/** 一级导航：首页 / 面试准备 / 项目资产 / 知识库 / 设置 */
+export const primaryNav = (): Section[] => sections.filter((s) => s.host === 'nav').sort((a, b) => a.order - b.order)
 
 export const sectionById = (id: string): Section | undefined => sections.find((s) => s.id === id)
 
 /** 内容板块（不含内置视图） */
 export const contentSections = (): Section[] => sections.filter((s) => !s.builtin)
+
+/** 某张页面里挂着的板块。空板块不出现，避免点进去一片空 */
+export const docsByHost = (host: string): Section[] =>
+  sections.filter((s) => !s.builtin && s.host === host && s.docs.length > 0).sort((a, b) => a.order - b.order)
+
+/** 知识库：除面试题与设置之外的全部文档 */
+export const librarySections = (): Section[] => docsByHost('library')
+
+/** 设置页的正文 */
+export const settingsSection = (): Section | undefined => sections.find((s) => s.host === 'settings')
+
+/* ==================== 岗位职责 → 我的技术材料 ==================== */
+
+/** 岗位描述里出现这些词，就算用到这个技术方向 */
+const TECH_MATCH: { id: string; words: string[] }[] = [
+  { id: 'ai', words: ['ai', 'llm', '大模型', 'rag', 'agent', 'prompt', '向量', '知识库', '评测', 'mcp', 'langchain', 'langgraph', 'dify', 'coze', '幻觉', '工作流', '智能问答'] },
+  { id: 'java', words: ['java', 'jvm', 'spring', '并发', '多线程', '线程池', '后端'] },
+  { id: 'go', words: ['golang', 'go 服务', 'go语言', 'go 语言'] },
+  { id: 'db', words: ['mysql', 'redis', '缓存', '数据库', 'elasticsearch', 'postgresql', '分库分表', '对象存储'] },
+  { id: 'middleware', words: ['kafka', 'rabbitmq', '消息队列', 'netty', 'websocket', 'spring cloud', 'springcloud', 'dubbo', '微服务'] },
+  { id: 'architecture', words: ['架构', '高可用', '稳定性', '性能', '扩展', '认证', '授权', '权限', '租户', '安全', '监控', '链路'] },
+  { id: 'devops', words: ['docker', 'kubernetes', 'k8s', 'ci/cd', 'cicd', '容器', '部署', '发布', '告警', '自动化测试'] },
+  { id: 'frontend', words: ['前端', 'vue', 'react', 'uni-app', '对话页'] },
+]
+
+/** 块序列拍平成文本：给提示词和关键词匹配共用 */
+export const blocksPlain = (blocks: Block[]): string =>
+  blocks
+    .flatMap((b) =>
+      b.type === 'list'
+        ? b.items
+        : b.type === 'quote'
+          ? b.lines
+          : b.type === 'table'
+            ? b.rows.flatMap((r) => Object.values(r))
+            : 'text' in b
+              ? [b.text]
+              : [],
+    )
+    .join(' ')
+
+/** 小写版，用来和 TECH_MATCH 的词表对 */
+export const blocksText = (blocks: Block[]): string => blocksPlain(blocks).toLowerCase()
+    .toLowerCase()
+
+/** 岗位职责点到哪几块技术，直接给知识库里的对应方向 */
+export const materialsFor = (blocks: Block[]): { id: string; label: string; count: number }[] => {
+  const text = blocksText(blocks)
+  if (!text.trim()) return []
+  return TECH_MATCH.flatMap(({ id, words }) => {
+    const s = sectionById(id)
+    if (!s || s.docs.length === 0) return []
+    if (!words.some((w) => text.includes(w))) return []
+    return [{ id, label: s.label, count: s.docs.length }]
+  })
+}
+
+/** 任意板块归到哪张页面，文档页的返回按钮与侧栏点亮都用它 */
+/** 面试准备下的三个页签都挂同一个侧栏入口 */
+const PREP_HOSTS = new Set(['prep-jobs', 'prep-war'])
+export const navIdOf = (id: string): string => {
+  const s = sectionById(id)
+  if (!s || s.host === 'nav') return id
+  return PREP_HOSTS.has(s.host) ? 'prep' : s.host
+}
+
+/** 真题库：高频真题一篇里，一节是一个公司，一节下面的条目是题 */
+export const questionBank = (): { company: string; questions: string[] }[] => {
+  const doc = sectionById('pitch')?.docs.find((d) => d.name === '高频真题')
+  if (!doc) return []
+  return doc.chunks
+    .filter((c) => c.name !== '正文')
+    .map((c) => ({ company: c.name, questions: c.blocks.flatMap((b) => (b.type === 'list' ? b.items : [])) }))
+    .filter((g) => g.questions.length > 0)
+}
+
+/** 这一场面试的真题；公司名对不上就返回空 */
+export const questionsFor = (company: string): string[] =>
+  questionBank()
+    .filter((g) => company && (company.includes(g.company) || g.company.includes(company)))
+    .flatMap((g) => g.questions)
+
+/* ==================== 练习记录 ==================== */
+
+export interface CoachSession {
+  id: string
+  at: string
+  job: string
+  rounds: number
+  score: number | null
+}
+
+export const COACH_HISTORY_KEY = 'career-hub:coach-sessions'
+
+export const readCoachHistory = (): CoachSession[] => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COACH_HISTORY_KEY) || '[]')
+    return Array.isArray(raw) ? (raw as CoachSession[]) : []
+  } catch {
+    return []
+  }
+}
 
 /** 知识卡按领域分组，按领域内的最高掌握度排序 */
 export const knowledgeByDomain = (): { domain: string; cards: KnowledgeCard[] }[] => {
@@ -296,6 +451,10 @@ const SECTION_ICONS: Record<string, unknown> = {
   files: PhFiles,
   kanban: PhKanban,
   mic: PhMicrophone,
+  book: PhBookOpenText,
+  archive: PhArchive,
+  books: PhBooks,
+  gear: PhGear,
 }
 
 export const sectionIcon = (key: string): unknown => SECTION_ICONS[key] || PhFileText

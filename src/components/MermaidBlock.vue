@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{ code: string; id: string }>()
+const props = defineProps<{ code: string; id: string; /** 演示投屏：去掉卡片外壳，图占满宽度放大 */ fit?: boolean }>()
 
 const el = ref<HTMLElement | null>(null)
 const error = ref('')
@@ -47,7 +47,19 @@ async function render() {
   try {
     const api = await load()
     const { svg } = await api.render(`m-${props.id}-${Date.now()}`, props.code)
+    if (!el.value) return // 渲染期间组件已被卸载（切页、筛选）
     el.value.innerHTML = svg
+    // 投屏用：mermaid 给 svg 写死了 max-width，只能渲染完再改它的 style。
+    // 宽度撑满、高度按 viewBox 等比走，再用 max-height 收进一屏 —— 等效 contain。
+    if (props.fit) {
+      const node = el.value.querySelector('svg')
+      if (node) {
+        node.style.width = '100%'
+        node.style.maxWidth = '100%'
+        node.style.height = 'auto'
+        node.style.maxHeight = '62vh'
+      }
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     el.value.innerHTML = ''
@@ -61,9 +73,9 @@ watch(() => props.code, render)
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-md border border-line bg-base p-3">
+  <div :class="props.fit ? 'w-full' : 'overflow-x-auto rounded-md border border-line bg-base p-3'">
     <p v-if="rendering" class="py-6 text-center text-xs font-bold text-neutral-400">正在渲染流程图…</p>
-    <div ref="el" class="md-body flex justify-center" />
+    <div ref="el" class="md-body flex justify-center" :class="props.fit ? 'w-full' : ''" />
     <p v-if="error" class="mt-2 text-xs font-bold text-neutral-500">该 mermaid 图无法渲染：{{ error }}</p>
   </div>
 </template>

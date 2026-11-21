@@ -898,3 +898,22 @@ git commit -m "feat: 演示产物指纹自检并接入上线链"
 `--demo` 分支用 `/tmp/fakebin` 里的假 `rsync`/`ssh` 干跑过一遍，确认它跳过主站构建、先自检再推、推完 `exit 0` 不碰 coach 代理；**没有向服务器发起任何真实上线**。全量站 `career.buildhub.cn` 本次未动。
 
 **改名（2026-10-27 交付后追加）**：`demo` 这个名字整体换成 `show`，对外子域名定为 `show.buildhub.cn`（`case` 会撞 JS 保留字）。英文标识符全链路跟着换：`show.html` / `src/show-main.ts` / `src/ShowApp.vue` / `src/data/show-store.ts` / `generated.show.json` / `scripts/check-show.mjs` / `dist-show` / vite mode `show` / `dev:show` `build:show` `check:show` / `--show` / `WEB_SHOW_ROOT`；卡上的 frontmatter 字段仍是中文 `演示:` `演示隐藏:` `演示链接:`，只有 JSON 里的键从 `demo*` 变 `show*`。本计划正文里残留的 `demo` 字样是执行当时的原名，不再回改。
+
+## 执行记录（2026-10-28 演示页改成讲解界面）
+
+上一版的演示页是「一条长滚动」，跟面试官要看的不是同一个东西。这轮按「演示软件」重做，只动演示这条链，全量站没碰。
+
+**1. 数据投影改成按章组织。** `toShowCard` 不再吐 `diagrams + chunks` 两份平铺数据，改成 `chapters[]`（一章 = 一个 H2，`{name, blocks, diagrams}`）加一个 `outline[]`（「讲解提纲」段的条目，右侧提词面板专用）。图从章的块里抽出来单独渲染，所以 `check-show.mjs` 的断言跟着换：`[段未删]` 看 `chapters`、`[图残留]/[图丢失]` 按章比对、新增 `[提纲错位]`（提纲条目必须和源卡一致）和 `[章节重名]`。
+
+**2. 两张真卡。** `content.private/项目成果/EX-100-签到服务高并发与海量数据优化.md`、`EX-101-无人机实战平台0-1.md`，事实全部来自 `content.private/30-Archive/项目复盘/`，没有编数字；`时间` 字段留空（复盘里没写死就不猜）。之前是 0 张可演示，现在 2 张。
+
+**3. mermaid 投屏踩了三个坑，都不显眼：**
+- Tailwind 的 `[&>svg]:w-full` 这类任意变体在本项目 v4 构建里没生成规则 → 改成渲染完直接改 svg 的 `style`（mermaid 会把 `max-width` 写死在 svg 上，只有渲染后能覆盖）。
+- `fit` 的外层是 `flex justify-center`，子项按内容收缩，svg 的 `width:100%` 于是相对一个 300px 的盒子算 → 两层都补 `w-full`。
+- 真正的问题是图本身：`flowchart LR` 六个节点横排，viewBox 1696×204，塞进 820px 宽等于把 13px 字压成 6px。图必须按投屏形状画（分支竖排、链路横排两行），文字章用 880px 行宽、有图的章用 1080px 画布并垂直居中。
+
+**4. 指纹闸门误报修正。** 「无人机」「架构设计」是私有复盘文档的标题，同时也是演示卡正文里的普通词，`bundle.includes(t)` 就天天报泄漏。改成只扫**私有独有**的串：先从候选里减掉演示 JSON 本来就含的，再拿去扫产物（现在 45 条扫、跳过 2 条）。改完重跑负例：拿主站产物冒充 `dist-show`，仍然报出硕橙科技 / 金旸集团 / 灵知科技 + 三条管道下一步 + 岗位与面试 + `[路径泄漏] content.private` + `[接口泄漏] /api/coach`，exit 1。产物层自检也并进了 `npm run build:show`，不用记第二条命令。
+
+**5. 键盘与全屏是真验过的。** 合成 `KeyboardEvent` 不算用户手势，`requestFullscreen()` 会被拒，所以用 CDP `Input.dispatchKeyEvent` 发真按键：`→` 连切两章、`↓` 换到第二个项目、`2` 跳到第二章，取回的界面状态与预期一致；全屏另用 Playwright 真点击验到 `document.fullscreenElement === HTML`。`/tmp/key.mjs` 是这轮加的按键驱动截图脚本。
+
+**没做**：没 push、没上线，`show.buildhub.cn` 仍然没有 vhost 和证书（按你给的规范「先实现内部切换，不必首版开发公开分享链接」）。`npm run dev:show` 本机共享屏幕就是当前用法。

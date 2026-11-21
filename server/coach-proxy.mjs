@@ -95,9 +95,11 @@ function postJson(url, headers, body) {
  * Connect middleware 传进来的就是同一种对象，所以本地和线上共用这条路径。
  */
 export async function handleCoach(req, res) {
+  const { base, key, model } = coachConfig()
+  // 前端用 GET 判断这台机器有没有配模型，只回布尔，不回端点与 key
+  if (req.method === 'GET' || req.method === 'HEAD') return json(res, 200, { ready: Boolean(base && key && model) })
   if (req.method !== 'POST') return json(res, 405, { error: '只支持 POST' })
 
-  const { base, key, model } = coachConfig()
   if (!base || !key || !model) {
     return json(res, 501, { error: '未配置面试教练端点。设置 COACH_API_BASE / COACH_API_KEY / COACH_MODEL 后重启。' })
   }

@@ -3,7 +3,7 @@
  * 职业工作台数据管道：扫描 content/，生成 src/data/generated.json
  *
  * 来源：
- *  1. content/<PARA>/<板块>/*.md  —— 本仓库内的干净骨架（按 PARA 分组：00-Projects / 10-Areas / 20-Resources / 30-Archive）
+ *  1. content/<PARA>/<板块>/*.md  —— 本仓库内的干净骨架（00-Projects / 10-Areas / 20-Resources / 30-Archive 只决定默认挂靠哪张页面）
  *  2. content/10-Areas/知识点/K-*.md —— 知识卡（知识点 + 图，能力图谱）
  *  3. ../career-os/**             —— **可选只读盘点**：旧库还剩多少资产、分布在哪，不导入正文（目录缺失时自动跳过）
  *
@@ -74,7 +74,7 @@ function tables(body) {
 
   return groups.map((rows) => {
     const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((s) => s.trim())
-    const head = cells(rows[0])
+    const head = cells(rows[0]).map(plainText)
     return rows
       .slice(1)
       .filter((r) => !/^[\s|:-]+$/.test(r))
@@ -105,6 +105,11 @@ function firstQuote(body) {
 /** 行内清洗：去掉链接语法，保留 ** 与 ` 交给前端做强调渲染 */
 function cleanInline(s) {
   return (s || '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim()
+}
+
+/** 纯文本：列表行里只放一句话，标记全部去掉 */
+function plainText(s) {
+  return cleanInline(s).replace(/\*\*/g, '').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim()
 }
 
 /** 按逗号 / 斜杠 / 顿号拆多值 */
@@ -149,9 +154,9 @@ function parseBlocks(body) {
       continue
     }
 
-    const h = line.match(/^(#{3,4})\s+(.+)$/)
+    const h = line.match(/^(#{3,6})\s+(.+)$/)
     if (h) {
-      blocks.push({ type: 'h', level: h[1].length, text: cleanInline(h[2]) })
+      blocks.push({ type: 'h', level: h[1].length, text: plainText(h[2]) })
       i += 1
       continue
     }
@@ -195,7 +200,7 @@ function parseBlocks(body) {
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !/^(#{3,4}\s|```|\s*\||>|\s*(?:[-*]|\d+\.)\s)/.test(lines[i])
+      !/^(#{3,6}\s|```|\s*\||>|\s*(?:[-*]|\d+\.)\s)/.test(lines[i])
     ) {
       buf.push(lines[i])
       i += 1
@@ -263,7 +268,7 @@ function parseDoc(md) {
   const chunks = []
   for (let i = 1; i < parts.length; i += 2) {
     chunks.push({
-      name: parts[i].replace(/[（(].*$/, '').trim(),
+      name: plainText(parts[i].replace(/[（(].*$/, '')),
       raw: parts[i + 1] || '',
       blocks: parseBlocks(parts[i + 1] || ''),
     })
@@ -331,25 +336,34 @@ function parseEvidenceCard(file, dir) {
 }
 
 /**
- * 演示投影：把一张成果卡削成「讲给面试官听」的形状。
- * 只留讲解需要的字段（file / chars / hasStar 这类内部字段一概不出门），
- * 按 showHidden 整段删除，段里的 mermaid 图随之消失 —— 图是从留下的块里重抽的，
+ * 演示投影：把一张成果卡削成「现场讲解」的形状。
+ * 只留讲解需要的字段（file / chars / hasStar / raw 这类内部字段一概不出门）。
+ * 章节 = 卡里剩下的 H2 段，按文档顺序；每章自带自己的 mermaid 图，
+ * 按 showHidden 整段删除时，段里的图一起消失 —— 图是从留下的块里重抽的，
  * 不复用 extractDiagrams(md) 的全量结果。
+ * 「影响」表供概览章用，「讲解提纲」供右侧提词面板用，两者都不成章。
  */
+const OUTLINE = '讲解提纲'
+
 function toShowCard(c) {
   const hidden = new Set(c.showHidden)
   const kept = c.chunks.filter((ch) => !hidden.has(ch.name))
-  // 「影响」与「架构图」单独前置渲染，留在 chunks 里会重复出现
-  const ON_CARD = new Set(['影响', '架构图'])
   const hasImpact = kept.some((ch) => ch.name === '影响')
-  const diagrams = []
+
+  const outline = []
   for (const ch of kept) {
-    for (const b of ch.blocks) {
-      if (b.type === 'mermaid') {
-        diagrams.push({ id: `d${diagrams.length + 1}`, name: ch.name, code: b.text })
-      }
-    }
+    if (ch.name !== OUTLINE) continue
+    for (const b of ch.blocks) if (b.type === 'list') outline.push(...b.items)
   }
+
+  const chapters = kept
+    .filter((ch) => ch.name !== '影响' && ch.name !== OUTLINE)
+    .map((ch) => ({
+      name: ch.name,
+      blocks: ch.blocks.filter((b) => b.type !== 'mermaid'),
+      diagrams: ch.blocks.filter((b) => b.type === 'mermaid').map((b) => b.text),
+    }))
+
   return {
     id: c.id,
     title: c.title,
@@ -361,8 +375,8 @@ function toShowCard(c) {
     showLink: c.showLink,
     impact: hasImpact ? c.impact : [],
     impactHead: hasImpact ? c.impactHead : [],
-    diagrams,
-    chunks: kept.filter((ch) => !ON_CARD.has(ch.name)).map(({ name, blocks }) => ({ name, blocks })),
+    outline,
+    chapters,
   }
 }
 
@@ -404,40 +418,58 @@ function parseKnowledgeCard(file, dir) {
 // 「加一个 md 目录 = 加一个板块」的实现处。
 // 已在 SECTION_DEFS 登记的目录按配置归组；未登记的自动兜底排到「系统」末尾。
 
-// PARA 分组：顶层目录前缀 → 分组显示名。顺序即导航顺序。
-const PARA_GROUPS = {
-  '00-Projects': 'Projects · 进行中',
-  '10-Areas': 'Areas · 长期资产',
-  '20-Resources': 'Resources · 参考',
-  '30-Archive': 'Archive · 归档',
+// PARA 顶层目录 → 默认挂在哪张页面下。板块自己可以用 host 覆盖。
+const PARA_HOST = {
+  '00-Projects': 'prep-jobs',
+  '10-Areas': 'library',
+  '20-Resources': 'library',
+  '30-Archive': 'library',
 }
-const GROUP_TO_ROOT = Object.fromEntries(Object.entries(PARA_GROUPS).map(([k, v]) => [v, k]))
-const GROUP_ORDER = ['工作台', 'Projects · 进行中', 'Areas · 长期资产', 'Resources · 参考', 'Archive · 归档']
+
+// 排序用：先一级导航，再两张页面里的资料，最后设置
+const HOST_ORDER = ['nav', 'prep-jobs', 'prep-know', 'prep-war', 'library', 'settings']
 
 // 板块展示配置（键 = content/<PARA>/<板块> 的二层目录名）。
-// group 字段为兜底值，实际分组由文件所在 PARA 顶层目录推导覆盖。
-// tone = 导航状态点的色类（b-* 见 src/style.css）。
+// host = 它归在哪张页面里：prep-jobs 是面试场次，prep-know 是知识与问题，
+// library 是知识库，settings 是设置。侧栏只放一级导航，板块在页面内出现。
 const SECTION_DEFS = {
-  职业定位: { id: 'position', label: '职业定位', group: 'Areas · 长期资产', order: 20, icon: 'compass', tone: 'b-blue' },
-  目标岗位: { id: 'jobs', label: '目标岗位', group: 'Areas · 长期资产', order: 21, icon: 'target', tone: 'b-blue' },
-  公司准备: { id: 'companies', label: '公司作战室', group: 'Projects · 进行中', order: 10, icon: 'buildings', tone: 'b-amber' },
-  技术笔记: { id: 'tech-notes', label: '技术笔记', group: 'Resources · 参考', order: 30, icon: 'wrench', tone: 'b-purple' },
-  面试问答: { id: 'pitch', label: '面试问答', group: 'Resources · 参考', order: 31, icon: 'megaphone', tone: 'b-purple' },
-  使用说明: { id: 'method', label: '使用说明', group: 'Resources · 参考', order: 39, icon: 'info', tone: 'b-purple' },
-  决策日志: { id: 'decisions', label: '决策日志', group: 'Resources · 参考', order: 40, icon: 'notebook', tone: 'b-purple' },
+  公司准备: { id: 'companies', label: '公司资料', root: '00-Projects', host: 'prep-jobs', order: 10, icon: 'buildings', tone: 'b-amber' },
+  面试记录: { id: 'interviews', label: '面试记录', root: '00-Projects', host: 'prep-jobs', order: 11, icon: 'notebook', tone: 'b-amber' },
+  作战室: { id: 'warroom', label: '岗位作战室', root: '00-Projects', host: 'prep-war', order: 12, icon: 'target', tone: 'b-purple' },
+
+  // 知识库里的技术方向：按自己的技术栈找材料，一个方向一个板块
+  Java: { id: 'java', label: 'Java', root: '10-Areas', host: 'library', group: '技术', order: 10, icon: 'doc', tone: 'b-blue' },
+  Go: { id: 'go', label: 'Go', root: '10-Areas', host: 'library', group: '技术', order: 11, icon: 'doc', tone: 'b-blue' },
+  数据库: { id: 'db', label: '数据库与缓存', root: '10-Areas', host: 'library', group: '技术', order: 12, icon: 'files', tone: 'b-blue' },
+  中间件: { id: 'middleware', label: '中间件', root: '10-Areas', host: 'library', group: '技术', order: 13, icon: 'graph', tone: 'b-blue' },
+  架构: { id: 'architecture', label: '架构与稳定性', root: '10-Areas', host: 'library', group: '技术', order: 14, icon: 'target', tone: 'b-blue' },
+  工程化: { id: 'devops', label: '工程化', root: '10-Areas', host: 'library', group: '技术', order: 15, icon: 'wrench', tone: 'b-blue' },
+  AI应用: { id: 'ai', label: 'AI 应用', root: '10-Areas', host: 'library', group: '技术', order: 16, icon: 'books', tone: 'b-blue' },
+  前端: { id: 'frontend', label: '前端', root: '10-Areas', host: 'library', group: '技术', order: 17, icon: 'doc', tone: 'b-blue' },
+
+  项目案例: { id: 'cases', label: '项目案例', root: '10-Areas', host: 'library', group: '项目', order: 30, icon: 'trophy', tone: 'b-amber' },
+  项目复盘: { id: 'retro', label: '项目复盘', root: '30-Archive', host: 'library', group: '项目', order: 31, icon: 'archive', tone: 'b-amber' },
+
+  职业定位: { id: 'position', label: '职业定位', root: '10-Areas', host: 'library', group: '求职', order: 40, icon: 'compass', tone: 'b-gray' },
+  目标岗位: { id: 'jobs', label: '目标岗位', root: '10-Areas', host: 'library', group: '求职', order: 41, icon: 'target', tone: 'b-gray' },
+  简历: { id: 'resume', label: '简历', root: '10-Areas', host: 'library', group: '求职', order: 42, icon: 'pencil', tone: 'b-gray' },
+  决策日志: { id: 'decisions', label: '决策日志', root: '20-Resources', host: 'library', group: '求职', order: 43, icon: 'notebook', tone: 'b-gray' },
+
+  面试问答: { id: 'pitch', label: '面试问答', root: '20-Resources', host: 'prep-know', order: 31, icon: 'megaphone', tone: 'b-purple' },
+  使用说明: { id: 'method', label: '使用说明', root: '20-Resources', host: 'settings', order: 50, icon: 'info', tone: 'b-purple' },
 }
 
-/** 内置视图：不走 content，由 Vue 组件直接实现（管道 / 训练室 / 卡片墙这类需要专用布局） */
+/** 一级导航：五张页面，侧栏只有它们，板块不再进侧栏 */
 const BUILTIN_NAV = [
-  { id: 'overview', label: '首页', group: '工作台', order: 1, icon: 'gauge', tone: 'b-green', builtin: true },
-  { id: 'pipeline', label: '岗位与面试', group: '工作台', order: 2, icon: 'kanban', tone: 'b-amber', builtin: true },
-  { id: 'coach', label: 'AI 训练室', group: '工作台', order: 3, icon: 'mic', tone: 'b-brand', builtin: true },
-  { id: 'evidence', label: '项目与经历', group: '工作台', order: 4, icon: 'trophy', tone: 'b-blue', builtin: true },
-  { id: 'knowledge', label: '知识与薄弱项', group: '工作台', order: 5, icon: 'graph', tone: 'b-purple', builtin: true },
+  { id: 'overview', label: '首页', host: 'nav', order: 1, icon: 'gauge', tone: 'b-green', builtin: true },
+  { id: 'prep', label: '面试准备', host: 'nav', order: 2, icon: 'book', tone: 'b-amber', builtin: true },
+  { id: 'evidence', label: '项目资产', host: 'nav', order: 3, icon: 'trophy', tone: 'b-blue', builtin: true },
+  { id: 'library', label: '知识库', host: 'nav', order: 4, icon: 'books', tone: 'b-gray', builtin: true },
+  { id: 'settings', label: '设置', host: 'nav', order: 5, icon: 'gear', tone: 'b-gray', builtin: true },
 ]
 
-/** 卡片板块单独解析，不进通用 DocView；它们的 _说明.md 挂到对应的内置视图上 */
-const CARD_DIR_TO_BUILTIN = { [KNOWLEDGE_DIR]: 'knowledge' }
+/** 卡片板块单独解析，不进通用 DocView；它们的 _说明.md 挂到对应页面 */
+const CARD_DIR_TO_BUILTIN = { [KNOWLEDGE_DIR]: 'prep' }
 
 /**
  * 某个板块目录下的 md 清单：并上 content/ 与 content.private/，同名只留私有那一份。
@@ -483,14 +515,18 @@ function parseSectionDocs(dir, includeGuide = false) {
       // 语雀导出的文档常常整篇没有 `##` 分节，内容全落在 head —— 不兜底就会渲染成空白页
       const rest = head.filter((b) => b.type !== 'quote')
       const shown = chunks.length ? chunks : rest.length ? [{ name: '正文', blocks: rest }] : []
+      // 列表里的一句话：有引用用引用，否则取正文第一段
+      const firstPara = shown.flatMap((c) => c.blocks).find((b) => b.type === 'para' && b.text.length > 12)
+      const summary = plainText(intro[0] || firstPara?.text || '').slice(0, 88)
       return {
         name: basename(f, '.md'),
         path: relative(ROOT, abs).replaceAll('\\', '/'),
         title: h1 || basename(f, '.md'),
         version: (fm['版本'] || '').replace(/[*\s]/g, ''),
         status: (fm['状态'] || '').replace(/[*\s]/g, ''),
-        updated: (fm['最后更新'] || '').replace(/[*\s]/g, '').slice(0, 10),
+        updated: (fm['最后更新'] || fm['updated_at'] || '').replace(/[*\s]/g, '').slice(0, 10),
         intro,
+        summary,
         chunks: shown.map(({ name, blocks }) => ({ name, blocks })),
         flowCount: shown.reduce((s, c) => s + c.blocks.filter((b) => b.type === 'mermaid').length, 0),
         chars: md.length,
@@ -512,11 +548,10 @@ function parseSections() {
   }
 
   // 扫描 PARA 顶层目录，二层目录即板块（公开骨架 + 私有副本两处都要看到）
-  const paraRoots = subDirNames('').filter((name) => PARA_GROUPS[name])
+  const paraRoots = subDirNames('').filter((name) => PARA_HOST[name])
 
   const seen = new Set()
   for (const root of paraRoots) {
-    const group = PARA_GROUPS[root]
     for (const sub of subDirNames(root)) {
       const dir = join(root, sub)
       if (seen.has(dir) || cardDirs.has(dir)) continue
@@ -524,14 +559,14 @@ function parseSections() {
       const def = SECTION_DEFS[sub] || {
         id: sub.replace(/[^\w\u4e00-\u9fa5]/g, '') || 'section',
         label: sub,
-        group,
+        root,
+        host: PARA_HOST[root],
         order: 50,
         icon: 'doc',
         tone: 'b-gray',
       }
       out.push({
         ...def,
-        group, // 用实际 PARA 层覆盖兜底 group
         builtin: false,
         dir,
         docs: parseSectionDocs(dir),
@@ -539,20 +574,20 @@ function parseSections() {
     }
   }
 
-  // 并上已登记但内容尚未写出的板块，让骨架先出现在导航里
+  // 并上已登记但内容尚未写出的板块，让骨架先出现
   for (const sub of Object.keys(SECTION_DEFS)) {
     const def = SECTION_DEFS[sub]
-    const dir = join(GROUP_TO_ROOT[def.group] || '20-Resources', sub)
+    const dir = join(def.root, sub)
     if (seen.has(dir) || out.some((s) => s.dir === dir)) continue
     seen.add(dir)
     out.push({ ...def, builtin: false, dir, docs: parseSectionDocs(dir) })
   }
 
-  const gi = (g) => {
-    const i = GROUP_ORDER.indexOf(g)
+  const hi = (h) => {
+    const i = HOST_ORDER.indexOf(h)
     return i < 0 ? 99 : i
   }
-  return out.sort((a, b) => gi(a.group) - gi(b.group) || a.order - b.order)
+  return out.sort((a, b) => hi(a.host) - hi(b.host) || a.order - b.order)
 }
 
 // ── 4. 旧库盘点（../career-os，只读，不导入正文） ─────────────
@@ -589,6 +624,57 @@ const PIPELINE_FILE = [join(PRIVATE, '00-Projects', '岗位管道.md'), join(CON
 const STAGES = ['待投', '已投', '笔试测评', '一面', '二面', '三面', 'HR面', 'Offer', '暂停', '已结束']
 const READINESS_SCORE = { 高: 3, 中: 2, 低: 1 }
 
+/**
+ * 岗位简报：从「公司资料」里那一篇抽开场页要的东西 —— 基本信息、公司是做什么的、
+ * 岗位职责、任职要求、岗位对照缺口、面试前要做完。管道页只认这一份，不另写一份 JD。
+ * 对表先按文件名等于公司名，再退到文件名或标题前缀含公司名，避免挂错行。
+ */
+const GAP_COVER = new Set(['部分', '缺', '超配'])
+
+function attachBriefs(rows, sections) {
+  const companies = sections.find((s) => s.id === 'companies')
+  if (!companies) return rows
+  const pick = (doc, name) => doc.chunks.find((c) => c.name === name)
+  const findDoc = (company) =>
+    companies.docs.find((d) => d.name === company) ||
+    companies.docs.find((d) => d.name.startsWith(company) || d.title.startsWith(company)) ||
+    companies.docs.find((d) => d.title.includes(company) || d.name.includes(company))
+  for (const row of rows) {
+    if (!row.company) continue
+    const doc = findDoc(row.company)
+    if (!doc) continue
+    row.companyDoc = doc.name
+    const duties = pick(doc, '岗位职责')
+    const requires = pick(doc, '任职要求') || pick(doc, '任职资格')
+    const what = pick(doc, '公司是做什么的')
+    if (!duties && !requires && !what) continue
+    const match = pick(doc, '岗位对照')?.blocks.find((b) => b.type === 'table')
+    const basic = pick(doc, '基本信息')?.blocks.find((b) => b.type === 'table')
+    row.brief = {
+      doc: doc.name,
+      // 「基本信息」表里 项 / 内容 两列，直接摊开场页；JD 原文单独留作外链
+      facts: (basic?.rows || [])
+        .map((r) => ({ k: r['项'] || '', v: Object.entries(r).find(([k]) => k !== '项')?.[1] || '' }))
+        .filter((x) => x.k && x.v && x.k !== 'JD 原文'),
+      jdLink: (basic?.rows || []).find((r) => (r['项'] || '').includes('JD'))?.['内容'] || '',
+      what: what ? what.blocks : [],
+      duties: duties ? duties.blocks : [],
+      requirements: requires ? requires.blocks : [],
+      gaps: match
+        ? match.rows
+            .filter((r) => GAP_COVER.has(r['覆盖度']))
+            .map((r) => ({ need: r['JD 要求'] || '', cover: r['覆盖度'], ask: r['会被怎么追问'] || '' }))
+        : [],
+      // 「面试前要做完」是带框的清单，逐项搬到开场页，省得再跳去完整资料
+      todo: (pick(doc, '面试前要做完')?.blocks || [])
+        .flatMap((b) => (b.type === 'list' ? b.items : []))
+        .map((x) => x.replace(/^\[[ xX]\]\s*/, '').replace(/^\[\s\]\s*/, ''))
+        .filter(Boolean),
+    }
+  }
+  return rows
+}
+
 function parsePipeline() {
   if (!PIPELINE_FILE || !existsSync(PIPELINE_FILE)) return []
   const md = readFileSync(PIPELINE_FILE, 'utf8')
@@ -620,6 +706,68 @@ function parsePipeline() {
   })
 }
 
+// ── 岗位作战室 ────────────────────────────────────────────────
+// 一篇文档 = 一个岗位。`## A 开场与动机` 是分组，`### [进阶] 题目` 是题，
+// 下面四个子标题固定为：面试官会这么问 / 参考答法 / 可能追问。
+function parseWarRoomDoc(doc) {
+  const [company, ...rest] = doc.name.split('-')
+  const groups = []
+  for (const c of doc.chunks) {
+    const m = c.name.match(/^([A-I]\d?)[.\s、]+(.+)$/)
+    const code = m ? m[1] : ''
+    const title = (m ? m[2] : c.name).trim()
+    const questions = []
+    let cur = null
+    let field = ''
+    for (const b of c.blocks) {
+      if (b.type === 'h' && b.level <= 3) {
+        const t = b.text.match(/^\[(基础|进阶|压力)\]\s*(.+)$/)
+        cur = {
+          id: `${code || 'X'}-${questions.length + 1}`,
+          level: t ? t[1] : '',
+          q: (t ? t[2] : b.text).trim(),
+          asked: [],
+          answer: [],
+          diagram: [],
+          followups: [],
+        }
+        questions.push(cur)
+        field = ''
+        continue
+      }
+      if (!cur) continue
+      if (b.type === 'h') {
+        field = b.text
+        continue
+      }
+      if (field === '面试官会这么问') {
+        if (b.type === 'para') cur.asked.push(b.text)
+        else if (b.type === 'list') cur.asked.push(...b.items)
+      } else if (field === '参考答法') {
+        cur.answer.push(b)
+      } else if (field === '架构图') {
+        cur.diagram.push(b)
+      } else if (field === '可能追问' && b.type === 'list') {
+        cur.followups.push(...b.items)
+      }
+    }
+    if (questions.length) groups.push({ code, title, questions })
+  }
+  return {
+    company: company.trim(),
+    role: rest.join('-').trim(),
+    doc: doc.name,
+    groups,
+    total: groups.reduce((n, g) => n + g.questions.length, 0),
+  }
+}
+
+function parseWarRooms(sections) {
+  const sec = sections.find((s) => s.id === 'warroom')
+  if (!sec) return []
+  return sec.docs.filter((d) => !d.name.startsWith('_')).map(parseWarRoomDoc)
+}
+
 // ── 汇总输出 ─────────────────────────────────────────────────
 
 const sections = parseSections()
@@ -632,12 +780,15 @@ const knowledge = mdFiles(KNOWLEDGE_DIR)
   .filter(([f]) => !f.startsWith('_'))
   .map(([f, abs]) => parseKnowledgeCard(abs, KNOWLEDGE_DIR))
 
+const pipeline = attachBriefs(parsePipeline(), sections)
+
 const data = {
   generatedAt: new Date().toISOString(),
   sections,
   evidence,
   knowledge,
-  pipeline: parsePipeline(),
+  pipeline,
+  warroom: parseWarRooms(sections),
   legacy: parseLegacy(),
 }
 

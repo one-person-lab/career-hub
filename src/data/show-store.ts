@@ -1,5 +1,12 @@
 import raw from './generated.show.json'
-import type { Chunk, Diagram } from './types'
+import type { Block } from './types'
+
+/** 一章：一个 H2 段，图单独出来好放大居中讲 */
+export interface ShowChapter {
+  name: string
+  blocks: Block[]
+  diagrams: string[]
+}
 
 /** 演示卡：只含讲解要用的字段，形状由 scripts/build-data.mjs 的 toShowCard 决定 */
 export interface ShowCard {
@@ -13,8 +20,9 @@ export interface ShowCard {
   showLink: string
   impact: Record<string, string>[]
   impactHead: string[]
-  diagrams: Diagram[]
-  chunks: Chunk[]
+  /** 「讲解提纲」段的条目，右侧提词面板用 */
+  outline: string[]
+  chapters: ShowChapter[]
 }
 
 const r = raw as Record<string, unknown>
